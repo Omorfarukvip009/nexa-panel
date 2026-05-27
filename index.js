@@ -541,12 +541,12 @@ async function getNumber(
 
     try {
 
-        // STOP OLD NUMBER
-
         const oldUser =
             await User.findOne({
                 chatId
             });
+
+        // STOP OLD NUMBER
 
         if (oldUser) {
 
@@ -572,9 +572,6 @@ async function getNumber(
                 {
                     range:
                         country.range,
-
-                    format:
-                        "national"
                 },
 
                 {
@@ -638,9 +635,13 @@ async function getNumber(
 
             chatId,
 
-            `📱 Number:\n\n${data.number}\n\nTap to copy`,
+            `📱 NUMBER\n\n\`${data.number}\`\n\nTap the number to copy`,
 
             {
+
+                parse_mode:
+                    "Markdown",
+
                 reply_markup: {
 
                     keyboard: [
@@ -658,7 +659,7 @@ async function getNumber(
 
         );
 
-        // START OTP CHECKER
+        // START CHECKER
 
         startOtpChecker(
             chatId,
@@ -721,7 +722,7 @@ function startOtpChecker(
 
                 }
 
-                // OTP ALREADY RECEIVED
+                // OTP RECEIVED
 
                 if (
                     user.otpReceived
@@ -766,7 +767,7 @@ function startOtpChecker(
 
                 }
 
-                // OTP RECEIVED
+                // OTP FOUND
 
                 if (
 
@@ -793,7 +794,12 @@ function startOtpChecker(
 
                         chatId,
 
-                        `✅ OTP RECEIVED\n\n🔐 OTP:\n${data.otp}\n\n📩 Message:\n${data.message}`
+                        `✅ OTP RECEIVED\n\n🔐 OTP:\n\`${data.otp}\`\n\n📩 Message:\n\`${data.message}\``,
+
+                        {
+                            parse_mode:
+                                "Markdown"
+                        }
 
                     );
 
