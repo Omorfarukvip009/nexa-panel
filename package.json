@@ -1,6 +1,7 @@
 {
   "name": "otp-bot",
   "version": "1.0.0",
+  "description": "Telegram OTP Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
