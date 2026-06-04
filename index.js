@@ -820,7 +820,7 @@ function startOtpChecker(
 
             }
 
-        }, 25000);
+        }, 7000);
 
 }
 
