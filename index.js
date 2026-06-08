@@ -778,8 +778,8 @@ function startOtpChecker(
 
                 // Extract OTP code: first 4–8 digit sequence in message
 
-                const otpCode =
-                    match.message.match(/\b\d{4,8}\b/)?.[0] || "—";
+                const cleaned = match.message.replace(/\D/g, "");
+const otpCode = cleaned.slice(0, 6);
 
                 await bot.sendMessage(
 
