@@ -122,21 +122,17 @@ const bot =
 // API CONFIG
 // =====================================
 
-const API_KEY =
-    process.env.API_KEY;
+const MAUTH_API =
+    process.env.MAUTH_API;
 
 const HEADERS = {
 
-    "X-API-Key":
-        API_KEY,
-
-    "Content-Type":
-        "application/json"
-
+    "mauthapi":
+        MAUTH_API,
 };
 
 const GET_NUMBER_API =
-    "http://63.141.255.227/api/v1/numbers/get";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/getnum";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -279,7 +275,7 @@ bot.on("message", async (msg) => {
 
             chatId,
 
-            "Send range\n\nExample:\n228985XXX"
+            "Send range\n\nExample:\n228983"
 
         );
 
@@ -570,7 +566,7 @@ async function getNumber(
                 GET_NUMBER_API,
 
                 {
-                    range:
+                    rid:
                         country.range,
                 },
 
@@ -584,10 +580,17 @@ async function getNumber(
 
             );
 
-        const data =
+        const resData =
             response.data;
 
-        if (!data.success) {
+        // Check API success: meta.code 200 and data exists
+        if (
+            !resData ||
+            !resData.meta ||
+            resData.meta.code !== 200 ||
+            !resData.data ||
+            !resData.data.full_number
+        ) {
 
             return bot.sendMessage(
 
@@ -598,6 +601,8 @@ async function getNumber(
             );
 
         }
+
+        const numData = resData.data;
 
         // SAVE USER
 
@@ -610,13 +615,13 @@ async function getNumber(
                 chatId,
 
                 number:
-                    data.number,
+                    numData.full_number,
 
                 number_id:
-                    data.number_id,
+                    resData.rid || numData.no_plus_number,
 
                 country:
-                    country.name,
+                    numData.country || country.name,
 
                 otpReceived:
                     false
@@ -635,7 +640,7 @@ async function getNumber(
 
             chatId,
 
-            `📱 NUMBER\n\n\`${data.number}\`\n\nTap the number to copy`,
+            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
 
             {
 
@@ -663,7 +668,7 @@ async function getNumber(
 
         startOtpChecker(
             chatId,
-            data.number_id
+            resData.rid || numData.no_plus_number
         );
 
     } catch (e) {
@@ -688,6 +693,9 @@ async function getNumber(
 // OTP CHECKER
 // =====================================
 
+const OTP_API =
+    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/success-otp";
+
 function startOtpChecker(
     chatId,
     numberId
@@ -703,113 +711,89 @@ function startOtpChecker(
                         chatId
                     });
 
-                // OLD REQUEST STOP
+                // STOP IF USER GONE / NUMBER CHANGED / ALREADY RECEIVED
 
                 if (
-
                     !user ||
-
-                    user.number_id !==
-                    numberId
-
-                ) {
-
-                    clearInterval(
-                        interval
-                    );
-
-                    return;
-
-                }
-
-                // OTP RECEIVED
-
-                if (
+                    user.number_id !== numberId ||
                     user.otpReceived
                 ) {
-
-                    clearInterval(
-                        interval
-                    );
-
+                    clearInterval(interval);
                     return;
-
                 }
 
-                // FETCH OTP
+                // FETCH ALL OTPs FROM SHARED ENDPOINT
 
                 const response =
                     await axios.get(
 
-                        `http://63.141.255.227/api/v1/numbers/${numberId}/sms`,
+                        OTP_API,
 
                         {
-                            headers:
-                                HEADERS,
-
-                            timeout:
-                                15000
+                            headers: HEADERS,
+                            timeout: 15000
                         }
 
                     );
 
-                const data =
+                const resData =
                     response.data;
 
-                // PENDING
+                // VALIDATE RESPONSE
 
                 if (
-                    data.status ===
-                    "pending"
+                    !resData ||
+                    !resData.meta ||
+                    resData.meta.code !== 200 ||
+                    !resData.data ||
+                    !Array.isArray(resData.data.otps) ||
+                    resData.data.otps.length === 0
                 ) {
-
                     return;
-
                 }
 
-                // OTP FOUND
+                // USER'S NUMBER — strip all non-digits for comparison
 
-                if (
+                const userNumber =
+                    user.number.replace(/[^0-9]/g, "");
 
-                    data.success ===
-                    true &&
+                // FIND MATCHING OTP ENTRY
 
-                    data.received ===
-                    true
-
-                ) {
-
-                    await User.updateOne(
-
-                        { chatId },
-
-                        {
-                            otpReceived:
-                                true
-                        }
-
+                const match =
+                    resData.data.otps.find(
+                        (entry) =>
+                            entry.number.replace(/[^0-9]/g, "") === userNumber
                     );
 
-                    await bot.sendMessage(
-
-                        chatId,
-
-                        `✅ OTP RECEIVED\n\n🔐 OTP:\n\`${data.otp}\`\n\n📩 Message:\n\`${data.message}\``,
-
-                        {
-                            parse_mode:
-                                "Markdown"
-                        }
-
-                    );
-
-                    clearInterval(
-                        interval
-                    );
-
+                if (!match) {
                     return;
-
                 }
+
+                // OTP MATCHED — mark received and notify user
+
+                await User.updateOne(
+                    { chatId },
+                    { otpReceived: true }
+                );
+
+                // Extract OTP code: first 4–8 digit sequence in message
+
+                const cleaned = match.message.replace(/\D/g, "");
+const otpCode = cleaned.slice(0, 6);
+
+                await bot.sendMessage(
+
+                    chatId,
+
+                    `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
+
+                    {
+                        parse_mode: "Markdown"
+                    }
+
+                );
+
+                clearInterval(interval);
 
             } catch (e) {
 
