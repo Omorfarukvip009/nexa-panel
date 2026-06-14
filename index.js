@@ -34,8 +34,14 @@ app.get("/", (req, res) => {
                         flex-direction:column;
                         font-family:Arial;
                     }
-                    h1{ color:#22c55e; font-size:55px; }
-                    p{ color:#cbd5e1; font-size:22px; }
+                    h1{
+                        color:#22c55e;
+                        font-size:55px;
+                    }
+                    p{
+                        color:#cbd5e1;
+                        font-size:22px;
+                    }
                 </style>
             </head>
             <body>
@@ -66,7 +72,6 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const MAUTH_API = process.env.MAUTH_API;
 const HEADERS = { "mauthapi": MAUTH_API };
 const GET_NUMBER_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
-const OTP_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -78,11 +83,16 @@ const adminState = {};
 // =====================================
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "🤖 OTP BOT READY", {
-        reply_markup: {
-            inline_keyboard: [[{ text: "🌍 Get Number", callback_data: "get_number" }]]
+    bot.sendMessage(
+        chatId,
+        "🤖 OTP BOT READY",
+        {
+            reply_markup: {
+                keyboard: [["🌍 Get Number"]],
+                resize_keyboard: true
+            }
         }
-    });
+    );
 });
 
 // =====================================
@@ -92,16 +102,79 @@ bot.onText(/\/admin/, async (msg) => {
     const chatId = msg.chat.id;
     if (!ADMIN_IDS.includes(chatId)) return;
 
-    bot.sendMessage(chatId, "⚙️ ADMIN PANEL", {
-        reply_markup: {
-            keyboard: [
-                ["➕ Add Country"],
-                ["➖ Remove Country"],
-                ["📋 Country List"]
-            ],
-            resize_keyboard: true
+    bot.sendMessage(
+        chatId,
+        "⚙️ ADMIN PANEL",
+        {
+            reply_markup: {
+                keyboard: [
+                    ["➕ Add Country"],
+                    ["➖ Remove Country"],
+                    ["📋 Country List"]
+                ],
+                resize_keyboard: true
+            }
         }
-    });
+    );
+});
+
+// =====================================
+// CALLBACK QUERY HANDLER (INLINE BUTTONS)
+// =====================================
+bot.on("callback_query", async (callbackQuery) => {
+    const msg = callbackQuery.message;
+    const chatId = msg.chat.id;
+    const data = callbackQuery.data;
+
+    // Acknowledge the callback immediately to remove loading state
+    bot.answerCallbackQuery(callbackQuery.id);
+
+    // Handle Country Selection
+    if (data.startsWith("select_country:")) {
+        const countryName = data.split(":")[1];
+        const selectedCountry = await Country.findOne({ name: countryName });
+        
+        if (selectedCountry) {
+            return getNumber(chatId, selectedCountry);
+        } else {
+            return bot.sendMessage(chatId, "❌ Country not found");
+        }
+    }
+
+    // Handle Inline Change Number
+    if (data === "change_num") {
+        const user = await User.findOne({ chatId });
+        if (!user) {
+            return bot.sendMessage(chatId, "❌ No active number");
+        }
+
+        const country = await Country.findOne({ name: user.country });
+        if (!country) {
+            return bot.sendMessage(chatId, "❌ Country not found");
+        }
+
+        return getNumber(chatId, country);
+    }
+
+    // Handle Inline Change Country
+    if (data === "change_country") {
+        const countries = await Country.find();
+        if (!countries.length) {
+            return bot.sendMessage(chatId, "❌ No country available");
+        }
+
+        return bot.sendMessage(
+            chatId,
+            "🌐 Select a country ⬇️",
+            {
+                reply_markup: {
+                    inline_keyboard: countries.map(c => [
+                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
+                    ])
+                }
+            }
+        );
+    }
 });
 
 // =====================================
@@ -110,6 +183,7 @@ bot.onText(/\/admin/, async (msg) => {
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
+
     if (!text) return;
 
     // ADD COUNTRY
@@ -156,136 +230,101 @@ bot.on("message", async (msg) => {
 
         let result = "🌍 COUNTRY LIST\n\n";
         countries.forEach((c, i) => {
-            result += `${i + 1}. ${c.name}\nRange: ${c.range}\n\n`;
+            result += `${i + 1}. ${c.name}\n`;
+            result += `Range: ${c.range}\n\n`;
         });
         return bot.sendMessage(chatId, result);
     }
-});
 
-// =====================================
-// CALLBACK QUERY HANDLER (INLINE BUTTONS)
-// =====================================
-bot.on("callback_query", async (query) => {
-    const chatId = query.message.chat.id;
-    const data = query.data;
-
-    bot.answerCallbackQuery(query.id).catch(() => {});
-
-    // GET NUMBER -> SHOW COUNTRY LIST
-    if (data === "get_number") {
-        bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
+    // GET NUMBER (Converted to Inline Layout matching image layout)
+    if (text === "🌍 Get Number") {
         const countries = await Country.find();
-
         if (!countries.length) {
             return bot.sendMessage(chatId, "❌ No country available");
         }
 
-        return bot.sendMessage(chatId, "🌍 Select a country ⬇️", {
-            reply_markup: {
-                inline_keyboard: countries.map(c => [{ text: c.name, callback_data: `country_${c._id}` }])
+        return bot.sendMessage(
+            chatId,
+            "🌐 Select a country ⬇️",
+            {
+                reply_markup: {
+                    inline_keyboard: countries.map(c => [
+                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
+                    ])
+                }
             }
-        });
+        );
     }
 
-    // COUNTRY SELECTED -> GET 3 NUMBERS
-    if (data.startsWith("country_")) {
-        const countryId = data.replace("country_", "");
-        const selectedCountry = await Country.findById(countryId);
-
-        if (!selectedCountry) {
-            return bot.sendMessage(chatId, "❌ Country not found");
-        }
-
-        bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
-        return getNumbers(chatId, selectedCountry);
-    }
-
-    // CHANGE NUMBER -> GET 3 NEW NUMBERS
-    if (data === "change_number") {
-        const user = await User.findOne({ chatId });
-        if (!user) {
-            return bot.sendMessage(chatId, "❌ No active number");
-        }
-
-        const country = await Country.findOne({ name: user.country });
-        if (!country) {
-            return bot.sendMessage(chatId, "❌ Country not found");
-        }
-
-        bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
-        return getNumbers(chatId, country);
-    }
+    // REMOVED OLD TEXT-BASED COUNTRY SELECT FROM HERE TO AVOID CONFLICTS WITH INLINE CALLBACKS
 });
 
 // =====================================
-// GET NUMBERS ENGINE
+// GET NUMBER FUNCTION
 // =====================================
-async function getNumbers(chatId, country) {
+async function getNumber(chatId, country) {
     try {
-        const fetched = [];
+        const oldUser = await User.findOne({ chatId });
 
-        for (let i = 0; i < 3; i++) {
-            try {
-                const response = await axios.post(GET_NUMBER_API, {
-                    rid: country.range,
-                }, {
-                    headers: HEADERS,
-                    timeout: 15000
-                });
-
-                const resData = response.data;
-                if (!resData || !resData.meta || resData.meta.code !== 200 || !resData.data || !resData.data.full_number) {
-                    continue;
-                }
-
-                const numData = resData.data;
-                const numberId = resData.rid || numData.no_plus_number || numData.full_number;
-
-                fetched.push({
-                    number: numData.full_number,
-                    number_id: numberId,
-                    operator: numData.operator,
-                    countryName: numData.country || country.name,
-                    otpReceived: false
-                });
-
-                console.log("📥 FETCHED NUMBER:", numData.full_number, "| id:", numberId);
-            } catch (e) {
-                console.log("GET NUMBER ERROR:", e.message);
-            }
+        // STOP OLD NUMBER
+        if (oldUser) {
+            await User.updateOne({ chatId }, { otpReceived: true });
         }
 
-        if (!fetched.length) {
+        // API REQUEST
+        const response = await axios.post(
+            GET_NUMBER_API,
+            { rid: country.range },
+            { headers: HEADERS, timeout: 15000 }
+        );
+
+        const resData = response.data;
+
+        if (
+            !resData ||
+            !resData.meta ||
+            resData.meta.code !== 200 ||
+            !resData.data ||
+            !resData.data.full_number
+        ) {
             return bot.sendMessage(chatId, "❌ Failed to get number");
         }
 
+        const numData = resData.data;
+
+        // SAVE USER
         await User.findOneAndUpdate(
             { chatId },
             {
                 chatId,
-                country: fetched[0].countryName,
-                numbers: fetched
+                number: numData.full_number,
+                number_id: resData.rid || numData.no_plus_number,
+                country: numData.country || country.name,
+                otpReceived: false
             },
             { upsert: true }
         );
 
-        let message = `📱 NUMBERS\n\n`;
-        fetched.forEach((n, i) => {
-            message += `${i + 1}. \`${n.number}\`\n   🌍 ${n.countryName} | 📡 ${n.operator}\n\n`;
-        });
-        message += `Tap a number to copy`;
-
-        await bot.sendMessage(chatId, message, {
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "🌍 Get Number", callback_data: "get_number" }],
-                    [{ text: "🔄 Change Number", callback_data: "change_number" }]
-                ]
+        // SEND NUMBER (With Inline markup built right into the message)
+        await bot.sendMessage(
+            chatId,
+            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
+            {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "🔄 Change Number", callback_data: "change_num" },
+                            { text: "🌍 Change Country", callback_data: "change_country" }
+                        ]
+                    ]
+                }
             }
-        });
+        );
 
-        startOtpChecker(chatId, fetched.map(n => n.number_id));
+        // START CHECKER
+        startOtpChecker(chatId, resData.rid || numData.no_plus_number);
+
     } catch (e) {
         console.log(e.message);
         bot.sendMessage(chatId, "❌ API Error");
@@ -293,26 +332,16 @@ async function getNumbers(chatId, country) {
 }
 
 // =====================================
-// SMART MATCHING OTP CHECKER
+// OTP CHECKER
 // =====================================
-function startOtpChecker(chatId, numberIds) {
-    console.log("🔄 OTP CHECKER STARTED for", chatId, "numbers:", numberIds);
+const OTP_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
+function startOtpChecker(chatId, numberId) {
     const interval = setInterval(async () => {
         try {
             const user = await User.findOne({ chatId });
 
-            if (!user || !Array.isArray(user.numbers) || !user.numbers.length) {
-                console.log("⏹ STOP: no user/numbers for", chatId);
-                clearInterval(interval);
-                return;
-            }
-
-            const pending = user.numbers.filter(n => numberIds.includes(n.number_id) && !n.otpReceived);
-            const stillTracked = user.numbers.some(n => numberIds.includes(n.number_id));
-
-            if (!stillTracked || !pending.length) {
-                console.log("⏹ STOP: batch finished or overridden for", chatId);
+            if (!user || user.number_id !== numberId || user.otpReceived) {
                 clearInterval(interval);
                 return;
             }
@@ -320,68 +349,36 @@ function startOtpChecker(chatId, numberIds) {
             const response = await axios.get(OTP_API, { headers: HEADERS, timeout: 15000 });
             const resData = response.data;
 
-            if (!resData || !resData.meta || resData.meta.code !== 200 || !resData.data || !Array.isArray(resData.data.otps) || resData.data.otps.length === 0) {
+            if (
+                !resData ||
+                !resData.meta ||
+                resData.meta.code !== 200 ||
+                !resData.data ||
+                !Array.isArray(resData.data.otps) ||
+                resData.data.otps.length === 0
+            ) {
                 return;
             }
 
-            for (const n of pending) {
-                const numberDigits = n.number.replace(/[^0-9]/g, "");
+            const userNumber = user.number.replace(/[^0-9]/g, "");
+            const match = resData.data.otps.find(
+                (entry) => entry.number.replace(/[^0-9]/g, "") === userNumber
+            );
 
-                const match = resData.data.otps.find(entry => {
-                    if (!entry || !entry.number) return false;
-                    const entryDigits = entry.number.replace(/[^0-9]/g, "");
-                    
-                    return (
-                        entryDigits === numberDigits ||
-                        entryDigits.endsWith(numberDigits) ||
-                        numberDigits.endsWith(entryDigits)
-                    );
-                });
+            if (!match) return;
 
-                if (!match) continue;
+            await User.updateOne({ chatId }, { otpReceived: true });
 
-                console.log("✅ MATCH FOUND for", n.number, "->", JSON.stringify(match));
+            const cleaned = match.message.replace(/\D/g, "");
+            const otpCode = cleaned.slice(0, 6);
 
-                // Instantly update DB status to avoid race conditions/duplicate messages
-                await User.updateOne(
-                    { chatId },
-                    { $set: { "numbers.$[elem].otpReceived": true } },
-                    { arrayFilters: [{ "elem.number_id": n.number_id }] }
-                );
+            await bot.sendMessage(
+                chatId,
+                `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
+                { parse_mode: "Markdown" }
+            );
 
-                const messageText = match.message || match.text || match.sms || "";
-                
-                // Safe extraction pattern for standard split formats (e.g. "798 231" or "798231")
-                const splitOtpMatch = messageText.match(/\b\d{3}\s\d{3}\b/);
-                let otpCode = "";
-                
-                if (splitOtpMatch) {
-                    otpCode = splitOtpMatch[0].replace(/\s/g, ""); // "798 231" -> "798231"
-                } else {
-                    const fallbackDigits = messageText.replace(/\D/g, "");
-                    otpCode = match.otp || fallbackDigits.slice(0, 6);
-                }
-
-                try {
-                    await bot.sendMessage(
-                        chatId,
-                        `✅ **OTP RECEIVED**\n\n📱 **Number:**\n\`${n.number}\`\n\n🔐 **OTP:** \`${otpCode}\`\n\n📩 **Message:**\n\`${messageText}\``,
-                        { parse_mode: "Markdown" }
-                    );
-                    console.log("📤 OTP forwarded to", chatId);
-                } catch (sendErr) {
-                    console.log("🚫 sendMessage FAILED:", sendErr.message);
-                }
-            }
-
-            // Post-pass verification context loop check
-            const refreshedUser = await User.findOne({ chatId });
-            const stillPending = refreshedUser && refreshedUser.numbers.some(n => numberIds.includes(n.number_id) && !n.otpReceived);
-
-            if (!stillPending) {
-                console.log("⏹ STOP: all numbers verified complete for", chatId);
-                clearInterval(interval);
-            }
+            clearInterval(interval);
 
         } catch (e) {
             console.log("OTP ERROR:", e.message);
@@ -394,4 +391,3 @@ function startOtpChecker(chatId, numberIds) {
 // =====================================
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
-                    
