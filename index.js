@@ -132,7 +132,7 @@ const HEADERS = {
 };
 
 const GET_NUMBER_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/getnum";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -795,7 +795,7 @@ async function getNumbers(
 // =====================================
 
 const OTP_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/success-otp";
 
 function startOtpChecker(
     chatId,
@@ -882,8 +882,20 @@ function startOtpChecker(
 
                     const match =
                         resData.data.otps.find(
-                            (entry) =>
-                                entry.number.replace(/[^0-9]/g, "") === numberDigits
+                            (entry) => {
+
+                                const entryDigits =
+                                    entry.number.replace(/[^0-9]/g, "");
+
+                                // MATCH EXACT OR SUFFIX (HANDLES MISSING/EXTRA COUNTRY CODE)
+
+                                return (
+                                    entryDigits === numberDigits ||
+                                    entryDigits.endsWith(numberDigits) ||
+                                    numberDigits.endsWith(entryDigits)
+                                );
+
+                            }
                         );
 
                     if (!match) {
@@ -930,12 +942,25 @@ function startOtpChecker(
 
                     );
 
-                    // STOP CHECKING ONCE ANY NUMBER SUCCEEDS
+                }
 
+                // CHECK IF ALL 3 ARE DONE -> STOP CHECKER
+
+                const refreshedUser =
+                    await User.findOne({
+                        chatId
+                    });
+
+                const stillPending =
+                    refreshedUser &&
+                    refreshedUser.numbers.some(
+                        (n) =>
+                            numberIds.includes(n.number_id) &&
+                            !n.otpReceived
+                    );
+
+                if (!stillPending) {
                     clearInterval(interval);
-
-                    return;
-
                 }
 
             } catch (e) {
@@ -963,3 +988,4 @@ bot.on(
 console.log(
     "BOT RUNNING..."
 );
+                                    
