@@ -1,3 +1,31 @@
+// =====================================
+// GLOBAL ERROR HANDLERS (PREVENT CRASH)
+// =====================================
+
+process.on("unhandledRejection", (reason) => {
+    console.log("UNHANDLED REJECTION:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+    console.log("UNCAUGHT EXCEPTION:", err.message);
+});
+
+// =====================================
+// HELPERS
+// =====================================
+
+// Escape Telegram MarkdownV1 special chars so OTP/operator/number
+// text never breaks parse_mode and silently fails to send.
+function escapeMarkdown(text) {
+
+    if (text === undefined || text === null) {
+        return "";
+    }
+
+    return String(text).replace(/([_*`\[])/g, "\\$1");
+
+}
+
 require("dotenv").config();
 
 const TelegramBot =
@@ -439,6 +467,8 @@ bot.on("callback_query", async (query) => {
         query.id
     ).catch(() => {});
 
+    try {
+
     // =================================
     // GET NUMBER -> SHOW COUNTRY LIST
     // =================================
@@ -502,10 +532,20 @@ bot.on("callback_query", async (query) => {
         const countryId =
             data.replace("country_", "");
 
-        const selectedCountry =
-            await Country.findById(
-                countryId
-            );
+        let selectedCountry = null;
+
+        try {
+
+            selectedCountry =
+                await Country.findById(
+                    countryId
+                );
+
+        } catch (e) {
+
+            selectedCountry = null;
+
+        }
 
         if (!selectedCountry) {
 
@@ -587,6 +627,23 @@ bot.on("callback_query", async (query) => {
             chatId,
             country
         );
+
+    }
+
+    } catch (e) {
+
+        console.log(
+            "CALLBACK ERROR:",
+            e.message
+        );
+
+        bot.sendMessage(
+
+            chatId,
+
+            "❌ Something went wrong, please try again"
+
+        ).catch(() => {});
 
     }
 
@@ -682,6 +739,16 @@ async function getNumbers(
 
             }
 
+            // SMALL DELAY BETWEEN REQUESTS TO AVOID RATE LIMITS
+
+            if (i < 2) {
+
+                await new Promise(
+                    (resolve) => setTimeout(resolve, 300)
+                );
+
+            }
+
         }
 
         if (!fetched.length) {
@@ -727,10 +794,10 @@ async function getNumbers(
         fetched.forEach((n, i) => {
 
             message +=
-                `${i + 1}. \`${n.number}\`\n`;
+                `${i + 1}. \`${escapeMarkdown(n.number)}\`\n`;
 
             message +=
-                `   🌍 ${n.countryName} | 📡 ${n.operator}\n\n`;
+                `   🌍 ${escapeMarkdown(n.countryName)} | 📡 ${escapeMarkdown(n.operator)}\n\n`;
 
         });
 
@@ -775,9 +842,9 @@ async function getNumbers(
 
         );
 
-        // START CHECKER FOR ALL 3 NUMBERS
+        // REGISTER FOR GLOBAL OTP POLLER
 
-        startOtpChecker(
+        registerOtpWatch(
             chatId,
             fetched.map(n => n.number_id)
         );
@@ -801,220 +868,220 @@ async function getNumbers(
 }
 
 // =====================================
-// OTP CHECKER
+// OTP CHECKER (SINGLE GLOBAL POLLER)
 // =====================================
+//
+// Instead of one setInterval per user (which would mean up to
+// ~100 intervals all hammering OTP_API every 2s at 100 users),
+// we keep one in-memory registry of {chatId -> Set(number_ids)}
+// and a single shared interval that fetches OTP_API once per
+// cycle and checks it against every active user's numbers.
 
 const OTP_API =
     "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
-function startOtpChecker(
-    chatId,
-    numberIds
-) {
+// chatId -> Set of number_ids currently being watched
+const otpWatchers = new Map();
+
+function registerOtpWatch(chatId, numberIds) {
+
+    otpWatchers.set(
+        chatId,
+        new Set(numberIds)
+    );
 
     console.log(
-        "🔄 OTP CHECKER STARTED for",
+        "🔄 OTP WATCH REGISTERED for",
         chatId,
         "numbers:",
         numberIds
     );
 
-    const interval =
-        setInterval(async () => {
+}
 
-            try {
+function digitsOf(value) {
 
-                const user =
-                    await User.findOne({
-                        chatId
-                    });
+    return String(value || "")
+        .replace(/[^0-9]/g, "");
 
-                if (
-                    !user ||
-                    !Array.isArray(user.numbers) ||
-                    !user.numbers.length
-                ) {
+}
 
-                    console.log(
-                        "⏹ STOP: no user/numbers for",
-                        chatId
-                    );
+function numbersMatch(a, b) {
 
-                    clearInterval(interval);
-                    return;
+    if (!a || !b) {
+        return false;
+    }
+
+    return (
+        a === b ||
+        a.endsWith(b) ||
+        b.endsWith(a)
+    );
+
+}
+
+async function pollOtps() {
+
+    if (!otpWatchers.size) {
+        return;
+    }
+
+    let resData;
+
+    try {
+
+        const response =
+            await axios.get(
+
+                OTP_API,
+
+                {
+                    headers: HEADERS,
+                    timeout: 15000
                 }
 
-                // ONLY CHECK NUMBERS FROM THIS BATCH, STILL PENDING
+            );
 
-                const pending =
-                    user.numbers.filter(
-                        (n) =>
-                            numberIds.includes(n.number_id) &&
-                            !n.otpReceived
-                    );
+        resData =
+            response.data;
 
-                // STOP IF NUMBERS WERE REPLACED (CHANGE NUMBER) OR ALL RECEIVED
+    } catch (e) {
 
-                const stillTracked =
-                    user.numbers.some(
-                        (n) =>
-                            numberIds.includes(n.number_id)
-                    );
+        console.log(
+            "OTP API ERROR:",
+            e.message
+        );
 
-                if (!stillTracked || !pending.length) {
+        return;
 
-                    console.log(
-                        "⏹ STOP: stillTracked=",
-                        stillTracked,
-                        "pending=",
-                        pending.length,
-                        "for",
-                        chatId
-                    );
+    }
 
-                    clearInterval(interval);
-                    return;
-                }
+    // VALIDATE RESPONSE
 
-                // FETCH ALL OTPs FROM SHARED ENDPOINT
+    if (
+        !resData ||
+        !resData.meta ||
+        resData.meta.code !== 200 ||
+        !resData.data ||
+        !Array.isArray(resData.data.otps) ||
+        resData.data.otps.length === 0
+    ) {
+        return;
+    }
 
-                const response =
-                    await axios.get(
+    const otps =
+        resData.data.otps.filter(
+            (entry) => entry && entry.number
+        );
 
-                        OTP_API,
+    if (!otps.length) {
+        return;
+    }
 
-                        {
-                            headers: HEADERS,
-                            timeout: 15000
-                        }
+    // CHECK EVERY ACTIVE WATCHER AGAINST THIS BATCH OF OTPs
 
-                    );
+    for (const [chatId, numberIds] of otpWatchers.entries()) {
 
-                const resData =
-                    response.data;
+        try {
 
-                console.log(
-                    "📡 OTP API RESPONSE:",
-                    JSON.stringify(resData)
+            const user =
+                await User.findOne({
+                    chatId
+                });
+
+            if (
+                !user ||
+                !Array.isArray(user.numbers) ||
+                !user.numbers.length
+            ) {
+
+                otpWatchers.delete(chatId);
+                continue;
+
+            }
+
+            const pending =
+                user.numbers.filter(
+                    (n) =>
+                        numberIds.has(n.number_id) &&
+                        !n.otpReceived
                 );
 
-                // VALIDATE RESPONSE
+            const stillTracked =
+                user.numbers.some(
+                    (n) => numberIds.has(n.number_id)
+                );
 
-                if (
-                    !resData ||
-                    !resData.meta ||
-                    resData.meta.code !== 200 ||
-                    !resData.data ||
-                    !Array.isArray(resData.data.otps) ||
-                    resData.data.otps.length === 0
-                ) {
+            if (!stillTracked || !pending.length) {
 
-                    console.log(
-                        "ℹ️ No OTPs available yet"
+                otpWatchers.delete(chatId);
+                continue;
+
+            }
+
+            for (const n of pending) {
+
+                const numberDigits =
+                    digitsOf(n.number);
+
+                const match =
+                    otps.find(
+                        (entry) =>
+                            numbersMatch(
+                                digitsOf(entry.number),
+                                numberDigits
+                            )
                     );
 
-                    return;
+                if (!match) {
+                    continue;
                 }
 
-                // CHECK EACH PENDING NUMBER FOR A MATCHING OTP
+                // MARK THIS NUMBER AS RECEIVED
 
-                for (const n of pending) {
+                await User.updateOne(
 
-                    const numberDigits =
-                        n.number.replace(/[^0-9]/g, "");
+                    { chatId },
 
-                    console.log(
-                        "🔍 Checking pending number:",
-                        n.number,
-                        "->",
-                        numberDigits
-                    );
+                    {
+                        $set: {
+                            "numbers.$[elem].otpReceived": true
+                        }
+                    },
 
-                    const match =
-                        resData.data.otps.find(
-                            (entry) => {
-
-                                if (!entry || !entry.number) {
-                                    return false;
-                                }
-
-                                const entryDigits =
-                                    entry.number.replace(/[^0-9]/g, "");
-
-                                console.log(
-                                    "   comparing against entry:",
-                                    entry.number,
-                                    "->",
-                                    entryDigits
-                                );
-
-                                // MATCH EXACT OR SUFFIX (HANDLES MISSING/EXTRA COUNTRY CODE)
-
-                                return (
-                                    entryDigits === numberDigits ||
-                                    entryDigits.endsWith(numberDigits) ||
-                                    numberDigits.endsWith(entryDigits)
-                                );
-
-                            }
-                        );
-
-                    if (!match) {
-
-                        console.log(
-                            "❌ No match for",
-                            n.number
-                        );
-
-                        continue;
+                    {
+                        arrayFilters: [
+                            { "elem.number_id": n.number_id }
+                        ]
                     }
 
-                    console.log(
-                        "✅ MATCH FOUND for",
-                        n.number,
-                        "->",
-                        JSON.stringify(match)
-                    );
+                );
 
-                    // MARK THIS NUMBER AS RECEIVED
+                // EXTRACT MESSAGE / OTP CODE (DEFENSIVE FIELD NAMES)
 
-                    await User.updateOne(
+                const messageText =
+                    match.message ||
+                    match.text ||
+                    match.sms ||
+                    "";
 
-                        { chatId },
+                const cleanedDigits =
+                    digitsOf(messageText);
+
+                const otpCode =
+                    match.otp ||
+                    cleanedDigits.slice(0, 6);
+
+                try {
+
+                    await bot.sendMessage(
+
+                        chatId,
+
+                        `✅ OTP RECEIVED\n\n📱 Number:\n\`${escapeMarkdown(n.number)}\`\n\n🔐 OTP: \`${escapeMarkdown(otpCode)}\`\n\n📩 Message:\n\`${escapeMarkdown(messageText)}\``,
 
                         {
-                            $set: {
-                                "numbers.$[elem].otpReceived": true
-                            }
-                        },
-
-                        {
-                            arrayFilters: [
-                                { "elem.number_id": n.number_id }
-                            ]
+                            parse_mode: "Markdown"
                         }
 
-                    );
-
-                    // Extract OTP code: first digits in message
-
-                    const messageText =
-                        match.message ||
-                        match.text ||
-                        match.sms ||
-                        "";
-
-                    const cleaned =
-                        messageText.replace(/\D/g, "");
-
-                    const otpCode =
-                        match.otp ||
-                        cleaned.slice(0, 6);
-
-                    try {
-
-                        await bot.sendMessage(
-
-                            chatId,
-
-                            `✅ OTP REC
+    
