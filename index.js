@@ -12,7 +12,7 @@ const User = require("./models/User");
 connectDB();
 
 // =====================================
-// EXPRESS SERVER (Keep-Alive Dashboard)
+// EXPRESS SERVER
 // =====================================
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,19 +23,19 @@ app.get("/", (req, res) => {
             <head>
                 <title>OTP Bot</title>
                 <style>
-                    body {
-                        background: #0f172a;
-                        color: white;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        flex-direction: column;
-                        font-family: Arial, sans-serif;
+                    body{
+                        background:#0f172a;
+                        color:white;
+                        display:flex;
+                        justify-content:center;
+                        align-items:center;
+                        height:100vh;
+                        margin:0;
+                        flex-direction:column;
+                        font-family:Arial;
                     }
-                    h1 { color: #22c55e; font-size: 55px; margin-bottom: 10px; }
-                    p { color: #cbd5e1; font-size: 22px; margin-top: 0; }
+                    h1{ color:#22c55e; font-size:55px; }
+                    p{ color:#cbd5e1; font-size:22px; }
                 </style>
             </head>
             <body>
@@ -47,32 +47,38 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Web Server Running on port ${PORT}`);
+    console.log("Web Server Running");
 });
 
 // =====================================
-// CONFIG & ADMINS
+// ADMIN IDS
 // =====================================
-const ADMIN_IDS = [5948588400]; // Add authorized Telegram Chat IDs here
+const ADMIN_IDS = [5948588400];
+
+// =====================================
+// TELEGRAM BOT
+// =====================================
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+
+// =====================================
+// API CONFIG
+// =====================================
 const MAUTH_API = process.env.MAUTH_API;
 const HEADERS = { "mauthapi": MAUTH_API };
 const GET_NUMBER_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
 const OTP_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
+// =====================================
+// TEMP ADMIN STATE
+// =====================================
 const adminState = {};
-
-// =====================================
-// TELEGRAM BOT INITIALIZATION
-// =====================================
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // =====================================
 // START COMMAND
 // =====================================
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "🤖 **OTP BOT READY**", {
-        parse_mode: "Markdown",
+    bot.sendMessage(chatId, "🤖 OTP BOT READY", {
         reply_markup: {
             inline_keyboard: [[{ text: "🌍 Get Number", callback_data: "get_number" }]]
         }
@@ -80,14 +86,13 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 // =====================================
-// ADMIN PANEL Command
+// ADMIN PANEL
 // =====================================
 bot.onText(/\/admin/, async (msg) => {
     const chatId = msg.chat.id;
     if (!ADMIN_IDS.includes(chatId)) return;
 
-    bot.sendMessage(chatId, "⚙️ **ADMIN PANEL**", {
-        parse_mode: "Markdown",
+    bot.sendMessage(chatId, "⚙️ ADMIN PANEL", {
         reply_markup: {
             keyboard: [
                 ["➕ Add Country"],
@@ -100,71 +105,65 @@ bot.onText(/\/admin/, async (msg) => {
 });
 
 // =====================================
-// ADMIN TEXT MESSAGE PROCESSING
+// MESSAGE HANDLER
 // =====================================
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
     if (!text) return;
 
-    // 1. Trigger Add Country State
+    // ADD COUNTRY
     if (text === "➕ Add Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "country_name" };
-        return bot.sendMessage(chatId, "Send country name:");
+        return bot.sendMessage(chatId, "Send country name");
     }
 
-    // 2. Process Country Name Input
+    // COUNTRY NAME
     if (adminState[chatId] && adminState[chatId].step === "country_name") {
         adminState[chatId].countryName = text;
         adminState[chatId].step = "country_range";
-        return bot.sendMessage(chatId, "Send range\n\nExample:\n`228983`", { parse_mode: "Markdown" });
+        return bot.sendMessage(chatId, "Send range\n\nExample:\n228983");
     }
 
-    // 3. Process Range Input & Save
+    // COUNTRY RANGE
     if (adminState[chatId] && adminState[chatId].step === "country_range") {
-        try {
-            await Country.create({
-                name: adminState[chatId].countryName,
-                range: text
-            });
-            delete adminState[chatId];
-            return bot.sendMessage(chatId, "✅ Country Added Successfully!");
-        } catch (err) {
-            delete adminState[chatId];
-            return bot.sendMessage(chatId, "❌ Failed to add country (Might already exist).");
-        }
+        await Country.create({
+            name: adminState[chatId].countryName,
+            range: text
+        });
+        delete adminState[chatId];
+        return bot.sendMessage(chatId, "✅ Country Added");
     }
 
-    // 4. Trigger Remove Country State
+    // REMOVE COUNTRY
     if (text === "➖ Remove Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "remove_country" };
-        return bot.sendMessage(chatId, "Send exact country name to remove:");
+        return bot.sendMessage(chatId, "Send exact country name");
     }
 
-    // 5. Process Country Removal
     if (adminState[chatId] && adminState[chatId].step === "remove_country") {
         await Country.deleteOne({ name: text });
         delete adminState[chatId];
-        return bot.sendMessage(chatId, "✅ Country Removed.");
+        return bot.sendMessage(chatId, "✅ Country Removed");
     }
 
-    // 6. View Country List
+    // COUNTRY LIST
     if (text === "📋 Country List" && ADMIN_IDS.includes(chatId)) {
         const countries = await Country.find();
         if (!countries.length) {
-            return bot.sendMessage(chatId, "No countries found in database.");
+            return bot.sendMessage(chatId, "No countries");
         }
 
-        let result = "🌍 **COUNTRY LIST**\n\n";
+        let result = "🌍 COUNTRY LIST\n\n";
         countries.forEach((c, i) => {
-            result += `${i + 1}. **${c.name}**\nRange: \`${c.range}\`\n\n`;
+            result += `${i + 1}. ${c.name}\nRange: ${c.range}\n\n`;
         });
-        return bot.sendMessage(chatId, result, { parse_mode: "Markdown" });
+        return bot.sendMessage(chatId, result);
     }
 });
 
 // =====================================
-// CALLBACK BUTTON HANDLERS
+// CALLBACK QUERY HANDLER (INLINE BUTTONS)
 // =====================================
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
@@ -172,48 +171,45 @@ bot.on("callback_query", async (query) => {
 
     bot.answerCallbackQuery(query.id).catch(() => {});
 
-    // Action: List Countries for User Selection
+    // GET NUMBER -> SHOW COUNTRY LIST
     if (data === "get_number") {
         bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
-
         const countries = await Country.find();
+
         if (!countries.length) {
-            return bot.sendMessage(chatId, "❌ No countries available at the moment.");
+            return bot.sendMessage(chatId, "❌ No country available");
         }
 
-        return bot.sendMessage(chatId, "🌍 **Select a country below:**", {
-            parse_mode: "Markdown",
+        return bot.sendMessage(chatId, "🌍 Select a country ⬇️", {
             reply_markup: {
-                inline_keyboard: countries.map(c => [
-                    { text: c.name, callback_data: `country_${c._id}` }
-                ])
+                inline_keyboard: countries.map(c => [{ text: c.name, callback_data: `country_${c._id}` }])
             }
         });
     }
 
-    // Action: Country Selected -> Generate Numbers
+    // COUNTRY SELECTED -> GET 3 NUMBERS
     if (data.startsWith("country_")) {
         const countryId = data.replace("country_", "");
         const selectedCountry = await Country.findById(countryId);
 
         if (!selectedCountry) {
-            return bot.sendMessage(chatId, "❌ Country selected no longer exists.");
+            return bot.sendMessage(chatId, "❌ Country not found");
         }
 
         bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
         return getNumbers(chatId, selectedCountry);
     }
 
-    // Action: Cycle Current Numbers out for fresh alternatives
+    // CHANGE NUMBER -> GET 3 NEW NUMBERS
     if (data === "change_number") {
         const user = await User.findOne({ chatId });
         if (!user) {
-            return bot.sendMessage(chatId, "❌ No active session found.");
+            return bot.sendMessage(chatId, "❌ No active number");
         }
 
         const country = await Country.findOne({ name: user.country });
         if (!country) {
-            return bot.sendMessage(chatId, "❌ Configuration error for country.");
+            return bot.sendMessage(chatId, "❌ Country not found");
         }
 
         bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
@@ -222,24 +218,23 @@ bot.on("callback_query", async (query) => {
 });
 
 // =====================================
-// NUMBER PROCUREMENT DISPATCHER
+// GET NUMBERS ENGINE
 // =====================================
 async function getNumbers(chatId, country) {
     try {
         const fetched = [];
 
-        // Attempt up to 3 individual HTTP requests to pool numbers
         for (let i = 0; i < 3; i++) {
             try {
                 const response = await axios.post(GET_NUMBER_API, {
-                    rid: country.range
+                    rid: country.range,
                 }, {
                     headers: HEADERS,
                     timeout: 15000
                 });
 
                 const resData = response.data;
-                if (!resData || resData.meta?.code !== 200 || !resData.data?.full_number) {
+                if (!resData || !resData.meta || resData.meta.code !== 200 || !resData.data || !resData.data.full_number) {
                     continue;
                 }
 
@@ -249,90 +244,86 @@ async function getNumbers(chatId, country) {
                 fetched.push({
                     number: numData.full_number,
                     number_id: numberId,
-                    operator: numData.operator || "Unknown",
+                    operator: numData.operator,
                     countryName: numData.country || country.name,
                     otpReceived: false
                 });
 
-                console.log(`📥 FETCHED NUMBER: ${numData.full_number} | ID: ${numberId}`);
+                console.log("📥 FETCHED NUMBER:", numData.full_number, "| id:", numberId);
             } catch (e) {
-                console.log("GET NUMBER STEP ERROR:", e.message);
+                console.log("GET NUMBER ERROR:", e.message);
             }
         }
 
         if (!fetched.length) {
-            return bot.sendMessage(chatId, "❌ Failed to secure any virtual numbers. Try again later.");
+            return bot.sendMessage(chatId, "❌ Failed to get number");
         }
 
-        // Cache parameters to database state
         await User.findOneAndUpdate(
             { chatId },
-            { chatId, country: fetched[0].countryName, numbers: fetched },
+            {
+                chatId,
+                country: fetched[0].countryName,
+                numbers: fetched
+            },
             { upsert: true }
         );
 
-        // Format and distribute interface metrics to user
-        let message = `📱 **YOUR VIRTUAL NUMBERS**\n\n`;
+        let message = `📱 NUMBERS\n\n`;
         fetched.forEach((n, i) => {
             message += `${i + 1}. \`${n.number}\`\n   🌍 ${n.countryName} | 📡 ${n.operator}\n\n`;
         });
-        message += `_Tap any number to copy easily._`;
+        message += `Tap a number to copy`;
 
         await bot.sendMessage(chatId, message, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "🌍 Get Different Country", callback_data: "get_number" }],
-                    [{ text: "🔄 Refresh All Numbers", callback_data: "change_number" }]
+                    [{ text: "🌍 Get Number", callback_data: "get_number" }],
+                    [{ text: "🔄 Change Number", callback_data: "change_number" }]
                 ]
             }
         });
 
-        // Initialize active live listener context matching this specific payload batch
         startOtpChecker(chatId, fetched.map(n => n.number_id));
-
     } catch (e) {
-        console.log("CRITICAL PROCUREMENT ERROR:", e.message);
-        bot.sendMessage(chatId, "❌ External API Error occurred.");
+        console.log(e.message);
+        bot.sendMessage(chatId, "❌ API Error");
     }
 }
 
 // =====================================
-// HIGH-FREQUENCY OTP MATCHING ENGINE
+// SMART MATCHING OTP CHECKER
 // =====================================
 function startOtpChecker(chatId, numberIds) {
-    console.log(`🔄 OTP CHECKER ACTIVE [Chat: ${chatId}] Targeting IDs:`, numberIds);
+    console.log("🔄 OTP CHECKER STARTED for", chatId, "numbers:", numberIds);
 
     const interval = setInterval(async () => {
         try {
             const user = await User.findOne({ chatId });
 
-            // Safety break: terminate process if user wipes data parameters or logs out
             if (!user || !Array.isArray(user.numbers) || !user.numbers.length) {
-                console.log(`⏹ STOPPED LISTENER: Clear dataset structure missing for chat ${chatId}`);
+                console.log("⏹ STOP: no user/numbers for", chatId);
                 clearInterval(interval);
                 return;
             }
 
-            // Isolate items within this specific context block that still lack confirmation matches
             const pending = user.numbers.filter(n => numberIds.includes(n.number_id) && !n.otpReceived);
             const stillTracked = user.numbers.some(n => numberIds.includes(n.number_id));
 
             if (!stillTracked || !pending.length) {
-                console.log(`⏹ STOPPED LISTENER: Target batch finished or renewed for chat ${chatId}`);
+                console.log("⏹ STOP: batch finished or overridden for", chatId);
                 clearInterval(interval);
                 return;
             }
 
-            // Sync structural information feed from live server array API
             const response = await axios.get(OTP_API, { headers: HEADERS, timeout: 15000 });
             const resData = response.data;
 
-            if (!resData || resData.meta?.code !== 200 || !Array.isArray(resData.data?.otps) || resData.data.otps.length === 0) {
-                return; // Silence loops running empty structures
+            if (!resData || !resData.meta || resData.meta.code !== 200 || !resData.data || !Array.isArray(resData.data.otps) || resData.data.otps.length === 0) {
+                return;
             }
 
-            // Cross-evaluate data elements
             for (const n of pending) {
                 const numberDigits = n.number.replace(/[^0-9]/g, "");
 
@@ -349,48 +340,58 @@ function startOtpChecker(chatId, numberIds) {
 
                 if (!match) continue;
 
-                console.log(`✅ MATCH FOUND -> Consolidating incoming message for ${n.number}`);
+                console.log("✅ MATCH FOUND for", n.number, "->", JSON.stringify(match));
 
-                // Instantly lock database element values to avoid duplicate Telegram message dispatching 
+                // Instantly update DB status to avoid race conditions/duplicate messages
                 await User.updateOne(
                     { chatId },
                     { $set: { "numbers.$[elem].otpReceived": true } },
                     { arrayFilters: [{ "elem.number_id": n.number_id }] }
                 );
 
-                // Isolate structural values safely
-                const messageText = match.message || match.text || match.sms || "Empty Content";
-                const cleanedDigits = messageText.replace(/\D/g, "");
-                const otpCode = match.otp || cleanedDigits.slice(0, 6);
+                const messageText = match.message || match.text || match.sms || "";
+                
+                // Safe extraction pattern for standard split formats (e.g. "798 231" or "798231")
+                const splitOtpMatch = messageText.match(/\b\d{3}\s\d{3}\b/);
+                let otpCode = "";
+                
+                if (splitOtpMatch) {
+                    otpCode = splitOtpMatch[0].replace(/\s/g, ""); // "798 231" -> "798231"
+                } else {
+                    const fallbackDigits = messageText.replace(/\D/g, "");
+                    otpCode = match.otp || fallbackDigits.slice(0, 6);
+                }
 
                 try {
                     await bot.sendMessage(
                         chatId,
-                        `✅ **OTP RECEIVED**\n\n📱 **Number:**\n\`${n.number}\`\n\n🔐 **OTP Code:** \`${otpCode}\`\n\n📩 **Full Message:**\n\`${messageText}\``,
+                        `✅ **OTP RECEIVED**\n\n📱 **Number:**\n\`${n.number}\`\n\n🔐 **OTP:** \`${otpCode}\`\n\n📩 **Message:**\n\`${messageText}\``,
                         { parse_mode: "Markdown" }
                     );
-                    console.log(`📤 Message delivered to Telegram Client: ${chatId}`);
+                    console.log("📤 OTP forwarded to", chatId);
                 } catch (sendErr) {
-                    console.log("🚫 Telegram transmission pipeline failed:", sendErr.message);
+                    console.log("🚫 sendMessage FAILED:", sendErr.message);
                 }
             }
 
-            // Post checking phase sweep: verify if additional targets remain active inside database space
+            // Post-pass verification context loop check
             const refreshedUser = await User.findOne({ chatId });
             const stillPending = refreshedUser && refreshedUser.numbers.some(n => numberIds.includes(n.number_id) && !n.otpReceived);
 
             if (!stillPending) {
-                console.log(`⏹ STOPPED LISTENER: Comprehensive verification completed for chat ${chatId}`);
+                console.log("⏹ STOP: all numbers verified complete for", chatId);
                 clearInterval(interval);
             }
 
         } catch (e) {
-            console.log("SYSTEM INTERNAL SAMPLING ERROR:", e.message);
+            console.log("OTP ERROR:", e.message);
         }
     }, 2000);
 }
 
-// Global Hook to capture and silence unexpected runtime crash variations
-bot.on("polling_error", (error) => console.log("🤖 Polling notice:", error.message));
-console.log("🤖 OTP SYSTEM BOOT COMPLETED SUCCESSFUL.");
+// =====================================
+// ERROR HANDLER
+// =====================================
+bot.on("polling_error", console.log);
+console.log("BOT RUNNING...");
                     
