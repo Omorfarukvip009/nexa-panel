@@ -135,6 +135,11 @@ bot.on("callback_query", async (callbackQuery) => {
         const selectedCountry = await Country.findOne({ name: countryName });
         
         if (selectedCountry) {
+            // Deletes the "Select Country" inline message to clean the inbox
+            bot.deleteMessage(chatId, msg.message_id).catch((e) => 
+                console.log("Error deleting menu message:", e.message)
+            );
+
             return getNumber(chatId, selectedCountry);
         } else {
             return bot.sendMessage(chatId, "❌ Country not found");
@@ -236,7 +241,7 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, result);
     }
 
-    // GET NUMBER (Converted to Inline Layout matching image layout)
+    // GET NUMBER
     if (text === "🌍 Get Number") {
         const countries = await Country.find();
         if (!countries.length) {
@@ -255,8 +260,6 @@ bot.on("message", async (msg) => {
             }
         );
     }
-
-    // REMOVED OLD TEXT-BASED COUNTRY SELECT FROM HERE TO AVOID CONFLICTS WITH INLINE CALLBACKS
 });
 
 // =====================================
@@ -305,7 +308,7 @@ async function getNumber(chatId, country) {
             { upsert: true }
         );
 
-        // SEND NUMBER (With Inline markup built right into the message)
+        // SEND NUMBER
         await bot.sendMessage(
             chatId,
             `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
@@ -391,3 +394,4 @@ function startOtpChecker(chatId, numberId) {
 // =====================================
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
+                
