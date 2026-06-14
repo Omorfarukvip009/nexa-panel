@@ -645,13 +645,16 @@ async function getNumbers(
                 const numData =
                     resData.data;
 
+                const numberId =
+                    resData.rid || numData.no_plus_number || numData.full_number;
+
                 fetched.push({
 
                     number:
                         numData.full_number,
 
                     number_id:
-                        resData.rid || numData.no_plus_number,
+                        numberId,
 
                     operator:
                         numData.operator,
@@ -662,6 +665,13 @@ async function getNumbers(
                     otpReceived: false
 
                 });
+
+                console.log(
+                    "📥 FETCHED NUMBER:",
+                    numData.full_number,
+                    "| id:",
+                    numberId
+                );
 
             } catch (e) {
 
@@ -802,6 +812,13 @@ function startOtpChecker(
     numberIds
 ) {
 
+    console.log(
+        "🔄 OTP CHECKER STARTED for",
+        chatId,
+        "numbers:",
+        numberIds
+    );
+
     const interval =
         setInterval(async () => {
 
@@ -817,6 +834,12 @@ function startOtpChecker(
                     !Array.isArray(user.numbers) ||
                     !user.numbers.length
                 ) {
+
+                    console.log(
+                        "⏹ STOP: no user/numbers for",
+                        chatId
+                    );
+
                     clearInterval(interval);
                     return;
                 }
@@ -839,6 +862,16 @@ function startOtpChecker(
                     );
 
                 if (!stillTracked || !pending.length) {
+
+                    console.log(
+                        "⏹ STOP: stillTracked=",
+                        stillTracked,
+                        "pending=",
+                        pending.length,
+                        "for",
+                        chatId
+                    );
+
                     clearInterval(interval);
                     return;
                 }
@@ -860,6 +893,11 @@ function startOtpChecker(
                 const resData =
                     response.data;
 
+                console.log(
+                    "📡 OTP API RESPONSE:",
+                    JSON.stringify(resData)
+                );
+
                 // VALIDATE RESPONSE
 
                 if (
@@ -870,6 +908,11 @@ function startOtpChecker(
                     !Array.isArray(resData.data.otps) ||
                     resData.data.otps.length === 0
                 ) {
+
+                    console.log(
+                        "ℹ️ No OTPs available yet"
+                    );
+
                     return;
                 }
 
@@ -880,12 +923,30 @@ function startOtpChecker(
                     const numberDigits =
                         n.number.replace(/[^0-9]/g, "");
 
+                    console.log(
+                        "🔍 Checking pending number:",
+                        n.number,
+                        "->",
+                        numberDigits
+                    );
+
                     const match =
                         resData.data.otps.find(
                             (entry) => {
 
+                                if (!entry || !entry.number) {
+                                    return false;
+                                }
+
                                 const entryDigits =
                                     entry.number.replace(/[^0-9]/g, "");
+
+                                console.log(
+                                    "   comparing against entry:",
+                                    entry.number,
+                                    "->",
+                                    entryDigits
+                                );
 
                                 // MATCH EXACT OR SUFFIX (HANDLES MISSING/EXTRA COUNTRY CODE)
 
@@ -899,8 +960,21 @@ function startOtpChecker(
                         );
 
                     if (!match) {
+
+                        console.log(
+                            "❌ No match for",
+                            n.number
+                        );
+
                         continue;
                     }
+
+                    console.log(
+                        "✅ MATCH FOUND for",
+                        n.number,
+                        "->",
+                        JSON.stringify(match)
+                    );
 
                     // MARK THIS NUMBER AS RECEIVED
 
@@ -924,68 +998,23 @@ function startOtpChecker(
 
                     // Extract OTP code: first digits in message
 
+                    const messageText =
+                        match.message ||
+                        match.text ||
+                        match.sms ||
+                        "";
+
                     const cleaned =
-                        match.message.replace(/\D/g, "");
+                        messageText.replace(/\D/g, "");
 
                     const otpCode =
+                        match.otp ||
                         cleaned.slice(0, 6);
 
-                    await bot.sendMessage(
+                    try {
 
-                        chatId,
+                        await bot.sendMessage(
 
-                        `✅ OTP RECEIVED\n\n📱 Number:\n\`${n.number}\`\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
+                            chatId,
 
-                        {
-                            parse_mode: "Markdown"
-                        }
-
-                    );
-
-                }
-
-                // CHECK IF ALL 3 ARE DONE -> STOP CHECKER
-
-                const refreshedUser =
-                    await User.findOne({
-                        chatId
-                    });
-
-                const stillPending =
-                    refreshedUser &&
-                    refreshedUser.numbers.some(
-                        (n) =>
-                            numberIds.includes(n.number_id) &&
-                            !n.otpReceived
-                    );
-
-                if (!stillPending) {
-                    clearInterval(interval);
-                }
-
-            } catch (e) {
-
-                console.log(
-                    "OTP ERROR:",
-                    e.message
-                );
-
-            }
-
-        }, 2000);
-
-}
-
-// =====================================
-// ERROR HANDLER
-// =====================================
-
-bot.on(
-    "polling_error",
-    console.log
-);
-
-console.log(
-    "BOT RUNNING..."
-);
-                                    
+                            `✅ OTP REC
