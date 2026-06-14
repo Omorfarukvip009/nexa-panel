@@ -132,7 +132,7 @@ const HEADERS = {
 };
 
 const GET_NUMBER_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/getnum";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -795,7 +795,7 @@ async function getNumbers(
 // =====================================
 
 const OTP_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/success-otp";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
 function startOtpChecker(
     chatId,
