@@ -132,7 +132,7 @@ const HEADERS = {
 };
 
 const GET_NUMBER_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/getnum";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -445,6 +445,13 @@ bot.on("callback_query", async (query) => {
 
     if (data === "get_number") {
 
+        // DELETE PREVIOUS MESSAGE FOR CLEAN INBOX
+
+        bot.deleteMessage(
+            chatId,
+            query.message.message_id
+        ).catch(() => {});
+
         const countries =
             await Country.find();
 
@@ -487,7 +494,7 @@ bot.on("callback_query", async (query) => {
     }
 
     // =================================
-    // COUNTRY SELECTED
+    // COUNTRY SELECTED -> GET 3 NUMBERS
     // =================================
 
     if (data.startsWith("country_")) {
@@ -512,7 +519,14 @@ bot.on("callback_query", async (query) => {
 
         }
 
-        return getNumber(
+        // DELETE PREVIOUS MESSAGE FOR CLEAN INBOX
+
+        bot.deleteMessage(
+            chatId,
+            query.message.message_id
+        ).catch(() => {});
+
+        return getNumbers(
             chatId,
             selectedCountry
         );
@@ -520,7 +534,7 @@ bot.on("callback_query", async (query) => {
     }
 
     // =================================
-    // CHANGE NUMBER
+    // CHANGE NUMBER -> GET 3 NEW NUMBERS
     // =================================
 
     if (data === "change_number") {
@@ -562,7 +576,14 @@ bot.on("callback_query", async (query) => {
 
         }
 
-        return getNumber(
+        // DELETE PREVIOUS MESSAGE FOR CLEAN INBOX
+
+        bot.deleteMessage(
+            chatId,
+            query.message.message_id
+        ).catch(() => {});
+
+        return getNumbers(
             chatId,
             country
         );
@@ -571,67 +592,89 @@ bot.on("callback_query", async (query) => {
 
 });
 
-async function getNumber(
+async function getNumbers(
     chatId,
     country
 ) {
 
     try {
 
-        const oldUser =
-            await User.findOne({
-                chatId
-            });
+        const fetched = [];
 
-        // STOP OLD NUMBER
+        // FETCH 3 NUMBERS
 
-        if (oldUser) {
+        for (let i = 0; i < 3; i++) {
 
-            await User.updateOne(
+            try {
 
-                { chatId },
+                const response =
+                    await axios.post(
 
-                {
-                    otpReceived: true
+                        GET_NUMBER_API,
+
+                        {
+                            rid:
+                                country.range,
+                        },
+
+                        {
+                            headers:
+                                HEADERS,
+
+                            timeout:
+                                15000
+                        }
+
+                    );
+
+                const resData =
+                    response.data;
+
+                if (
+                    !resData ||
+                    !resData.meta ||
+                    resData.meta.code !== 200 ||
+                    !resData.data ||
+                    !resData.data.full_number
+                ) {
+
+                    continue;
+
                 }
 
-            );
+                const numData =
+                    resData.data;
+
+                fetched.push({
+
+                    number:
+                        numData.full_number,
+
+                    number_id:
+                        resData.rid || numData.no_plus_number,
+
+                    operator:
+                        numData.operator,
+
+                    countryName:
+                        numData.country || country.name,
+
+                    otpReceived: false
+
+                });
+
+            } catch (e) {
+
+                console.log(
+                    "GET NUMBER ERROR:",
+                    e.message
+                );
+
+            }
 
         }
 
-        // API REQUEST
-
-        const response =
-            await axios.post(
-
-                GET_NUMBER_API,
-
-                {
-                    rid:
-                        country.range,
-                },
-
-                {
-                    headers:
-                        HEADERS,
-
-                    timeout:
-                        15000
-                }
-
-            );
-
-        const resData =
-            response.data;
-
-        // Check API success: meta.code 200 and data exists
-        if (
-            !resData ||
-            !resData.meta ||
-            resData.meta.code !== 200 ||
-            !resData.data ||
-            !resData.data.full_number
-        ) {
+        if (!fetched.length) {
 
             return bot.sendMessage(
 
@@ -643,9 +686,7 @@ async function getNumber(
 
         }
 
-        const numData = resData.data;
-
-        // SAVE USER
+        // SAVE USER (REPLACE OLD NUMBERS)
 
         await User.findOneAndUpdate(
 
@@ -655,17 +696,10 @@ async function getNumber(
 
                 chatId,
 
-                number:
-                    numData.full_number,
-
-                number_id:
-                    resData.rid || numData.no_plus_number,
-
                 country:
-                    numData.country || country.name,
+                    fetched[0].countryName,
 
-                otpReceived:
-                    false
+                numbers: fetched
 
             },
 
@@ -675,13 +709,31 @@ async function getNumber(
 
         );
 
-        // SEND NUMBER
+        // BUILD MESSAGE TEXT
+
+        let message =
+            `📱 NUMBERS\n\n`;
+
+        fetched.forEach((n, i) => {
+
+            message +=
+                `${i + 1}. \`${n.number}\`\n`;
+
+            message +=
+                `   🌍 ${n.countryName} | 📡 ${n.operator}\n\n`;
+
+        });
+
+        message +=
+            `Tap a number to copy`;
+
+        // SEND NUMBERS
 
         await bot.sendMessage(
 
             chatId,
 
-            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
+            message,
 
             {
 
@@ -713,11 +765,11 @@ async function getNumber(
 
         );
 
-        // START CHECKER
+        // START CHECKER FOR ALL 3 NUMBERS
 
         startOtpChecker(
             chatId,
-            resData.rid || numData.no_plus_number
+            fetched.map(n => n.number_id)
         );
 
     } catch (e) {
@@ -743,11 +795,11 @@ async function getNumber(
 // =====================================
 
 const OTP_API =
-    "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api/success-otp";
+    "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
 function startOtpChecker(
     chatId,
-    numberId
+    numberIds
 ) {
 
     const interval =
@@ -760,13 +812,33 @@ function startOtpChecker(
                         chatId
                     });
 
-                // STOP IF USER GONE / NUMBER CHANGED / ALREADY RECEIVED
-
                 if (
                     !user ||
-                    user.number_id !== numberId ||
-                    user.otpReceived
+                    !Array.isArray(user.numbers) ||
+                    !user.numbers.length
                 ) {
+                    clearInterval(interval);
+                    return;
+                }
+
+                // ONLY CHECK NUMBERS FROM THIS BATCH, STILL PENDING
+
+                const pending =
+                    user.numbers.filter(
+                        (n) =>
+                            numberIds.includes(n.number_id) &&
+                            !n.otpReceived
+                    );
+
+                // STOP IF NUMBERS WERE REPLACED (CHANGE NUMBER) OR ALL RECEIVED
+
+                const stillTracked =
+                    user.numbers.some(
+                        (n) =>
+                            numberIds.includes(n.number_id)
+                    );
+
+                if (!stillTracked || !pending.length) {
                     clearInterval(interval);
                     return;
                 }
@@ -801,48 +873,70 @@ function startOtpChecker(
                     return;
                 }
 
-                // USER'S NUMBER — strip all non-digits for comparison
+                // CHECK EACH PENDING NUMBER FOR A MATCHING OTP
 
-                const userNumber =
-                    user.number.replace(/[^0-9]/g, "");
+                for (const n of pending) {
 
-                // FIND MATCHING OTP ENTRY
+                    const numberDigits =
+                        n.number.replace(/[^0-9]/g, "");
 
-                const match =
-                    resData.data.otps.find(
-                        (entry) =>
-                            entry.number.replace(/[^0-9]/g, "") === userNumber
-                    );
+                    const match =
+                        resData.data.otps.find(
+                            (entry) =>
+                                entry.number.replace(/[^0-9]/g, "") === numberDigits
+                        );
 
-                if (!match) {
-                    return;
-                }
-
-                // OTP MATCHED — mark received and notify user
-
-                await User.updateOne(
-                    { chatId },
-                    { otpReceived: true }
-                );
-
-                // Extract OTP code: first 4–8 digit sequence in message
-
-                const cleaned = match.message.replace(/\D/g, "");
-const otpCode = cleaned.slice(0, 6);
-
-                await bot.sendMessage(
-
-                    chatId,
-
-                    `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
-
-                    {
-                        parse_mode: "Markdown"
+                    if (!match) {
+                        continue;
                     }
 
-                );
+                    // MARK THIS NUMBER AS RECEIVED
 
-                clearInterval(interval);
+                    await User.updateOne(
+
+                        { chatId },
+
+                        {
+                            $set: {
+                                "numbers.$[elem].otpReceived": true
+                            }
+                        },
+
+                        {
+                            arrayFilters: [
+                                { "elem.number_id": n.number_id }
+                            ]
+                        }
+
+                    );
+
+                    // Extract OTP code: first digits in message
+
+                    const cleaned =
+                        match.message.replace(/\D/g, "");
+
+                    const otpCode =
+                        cleaned.slice(0, 6);
+
+                    await bot.sendMessage(
+
+                        chatId,
+
+                        `✅ OTP RECEIVED\n\n📱 Number:\n\`${n.number}\`\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
+
+                        {
+                            parse_mode: "Markdown"
+                        }
+
+                    );
+
+                    // STOP CHECKING ONCE ANY NUMBER SUCCEEDS
+
+                    clearInterval(interval);
+
+                    return;
+
+                }
 
             } catch (e) {
 
@@ -869,4 +963,3 @@ bot.on(
 console.log(
     "BOT RUNNING..."
 );
-    
