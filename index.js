@@ -158,11 +158,14 @@ bot.onText(/\/start/, async (msg) => {
         {
             reply_markup: {
 
-                keyboard: [
-                    ["🌍 Get Number"]
-                ],
-
-                resize_keyboard: true
+                inline_keyboard: [
+                    [
+                        {
+                            text: "🌍 Get Number",
+                            callback_data: "get_number"
+                        }
+                    ]
+                ]
 
             }
         }
@@ -413,10 +416,34 @@ bot.on("message", async (msg) => {
     }
 
     // =================================
-    // GET NUMBER
+    // COUNTRY SELECT (legacy text fallback removed)
     // =================================
 
-    if (text === "🌍 Get Number") {
+});
+
+// =====================================
+// CALLBACK QUERY HANDLER (INLINE BUTTONS)
+// =====================================
+
+bot.on("callback_query", async (query) => {
+
+    const chatId =
+        query.message.chat.id;
+
+    const data =
+        query.data;
+
+    // ACK the callback so the button stops loading
+
+    bot.answerCallbackQuery(
+        query.id
+    ).catch(() => {});
+
+    // =================================
+    // GET NUMBER -> SHOW COUNTRY LIST
+    // =================================
+
+    if (data === "get_number") {
 
         const countries =
             await Country.find();
@@ -437,17 +464,20 @@ bot.on("message", async (msg) => {
 
             chatId,
 
-            "Select Country",
+            "🌍 Select a country ⬇️",
 
             {
                 reply_markup: {
 
-                    keyboard:
+                    inline_keyboard:
                         countries.map(
-                            c => [c.name]
-                        ),
-
-                    resize_keyboard: true
+                            c => [
+                                {
+                                    text: c.name,
+                                    callback_data: `country_${c._id}`
+                                }
+                            ]
+                        )
 
                 }
             }
@@ -457,15 +487,30 @@ bot.on("message", async (msg) => {
     }
 
     // =================================
-    // COUNTRY SELECT
+    // COUNTRY SELECTED
     // =================================
 
-    const selectedCountry =
-        await Country.findOne({
-            name: text
-        });
+    if (data.startsWith("country_")) {
 
-    if (selectedCountry) {
+        const countryId =
+            data.replace("country_", "");
+
+        const selectedCountry =
+            await Country.findById(
+                countryId
+            );
+
+        if (!selectedCountry) {
+
+            return bot.sendMessage(
+
+                chatId,
+
+                "❌ Country not found"
+
+            );
+
+        }
 
         return getNumber(
             chatId,
@@ -478,7 +523,7 @@ bot.on("message", async (msg) => {
     // CHANGE NUMBER
     // =================================
 
-    if (text === "🔄 Change Number") {
+    if (data === "change_number") {
 
         const user =
             await User.findOne({
@@ -525,10 +570,6 @@ bot.on("message", async (msg) => {
     }
 
 });
-
-// =====================================
-// GET NUMBER FUNCTION
-// =====================================
 
 async function getNumber(
     chatId,
@@ -649,15 +690,23 @@ async function getNumber(
 
                 reply_markup: {
 
-                    keyboard: [
+                    inline_keyboard: [
 
-                        ["🌍 Get Number"],
+                        [
+                            {
+                                text: "🌍 Get Number",
+                                callback_data: "get_number"
+                            }
+                        ],
 
-                        ["🔄 Change Number"]
+                        [
+                            {
+                                text: "🔄 Change Number",
+                                callback_data: "change_number"
+                            }
+                        ]
 
-                    ],
-
-                    resize_keyboard: true
+                    ]
 
                 }
             }
@@ -820,3 +869,4 @@ bot.on(
 console.log(
     "BOT RUNNING..."
 );
+    
