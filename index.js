@@ -57,11 +57,13 @@ app.listen(PORT, () => {
 });
 
 // =====================================
-// ADMIN & GROUP CONFIGURATION
+// CONFIGURATION (ADMIN & TARGET GROUP)
 // =====================================
-const ADMIN_IDS = [5948588400];
-const REQUIRED_GROUP_ID = -1003724610035;
-const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1";
+const ADMIN_IDS = [5948588400]; // Admin Telegram ID
+
+// ⚠️ CHANGE THESE TO YOUR TARGET GROUP DETAILS:
+const REQUIRED_GROUP_ID = -1003724610035; // The group where OTPs will be forwarded
+const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1"; // Your group invite link
 
 // =====================================
 // TELEGRAM BOT
@@ -364,7 +366,7 @@ async function getNumber(chatId, country) {
 }
 
 // =====================================
-// OTP CHECKER & FORWARDER ENGINE
+// OTP CHECKER & GROUP FORWARDER ENGINE
 // =====================================
 function startOtpChecker(chatId, numberId) {
     const interval = setInterval(async () => {
@@ -392,28 +394,27 @@ function startOtpChecker(chatId, numberId) {
             
             await User.updateOne({ chatId }, { otpReceived: true });
 
-            // 🔥 FIX: Clean out ALL spaces/non-digits from code or message to force solid layout
+            // Clean layout (Stripping out any API spaces/formatting)
             let rawOtp = match.code ? match.code.toString() : match.message;
-            let otpCode = rawOtp.replace(/\D/g, ""); // Removes spaces, hyphens, and letters completely
+            let otpCode = rawOtp.replace(/\D/g, ""); 
 
-            // Optional: If the scraped code is longer than 6 digits (like combining message digits), keep just first 6
             if (otpCode.length > 6) {
                 otpCode = otpCode.slice(0, 6);
             }
 
-            // 1. Send cleanly to User Private Box (Click to copy)
+            // 1. Send cleanly to User Private Chat Box (Click to copy)
             await bot.sendMessage(
                 chatId,
                 `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
                 { parse_mode: "Markdown" }
             );
 
-            // 2. Format and pipe to Global Telegram Group (Click to copy enabled here too)
+            // 2. 🔥 FORWARD TO TELEGRAM GROUP (Click to copy enabled here as well)
             const maskedNumberStr = maskNumber(user.number);
-            const groupPayload = `New OTP Received 🔥\nNumber: ${maskedNumberStr}\nOTP: \`${otpCode}\`\nFull Message:\n${match.message}`;
+            const groupPayload = `New OTP Received 🔥\n\n📱 Number: ${maskedNumberStr}\n🔐 OTP: \`${otpCode}\`\n\n📩 Full Message:\n\`${match.message}\``;
 
             await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "Markdown" })
-                .catch((err) => console.log("Channel logging stream broken:", err.message));
+                .catch((err) => console.log("Group Forwarding failed:", err.message));
 
             clearInterval(interval);
 
@@ -425,4 +426,4 @@ function startOtpChecker(chatId, numberId) {
 
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
-    
+                                              
