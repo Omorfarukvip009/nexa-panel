@@ -59,11 +59,11 @@ app.listen(PORT, () => {
 // =====================================
 // CONFIGURATION (ADMIN & TARGET GROUP)
 // =====================================
-const ADMIN_IDS = [5948588400]; // Admin Telegram ID
+const ADMIN_IDS = [5948588400]; 
 
-// ⚠️ CHANGE THESE TO YOUR TARGET GROUP DETAILS:
-const REQUIRED_GROUP_ID = -1003724610035; // The group where OTPs will be forwarded
-const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1"; // Your group invite link
+// ⚙️ CHOOSE YOUR TARGET GROUP/CHANNEL CONFIGURATION:
+const REQUIRED_GROUP_ID = process.env.REQUIRED_GROUP_ID || -1003724610035; 
+const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1"; 
 
 // =====================================
 // TELEGRAM BOT
@@ -134,6 +134,16 @@ function maskNumber(numStr) {
     const first3 = clean.slice(0, 3);
     const last4 = clean.slice(-4);
     return `+${first3}***${last4}`;
+}
+
+// Helper to prevent HTML syntax injection from broken SMS strings
+// This stops Telegram from throwing parsing errors
+function escapeHTML(text) {
+    if (!text) return "";
+    return text.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 }
 
 // =====================================
@@ -342,11 +352,12 @@ async function getNumber(chatId, country) {
             { upsert: true }
         );
 
+        // Updated to HTML mode for absolute layout safety
         await bot.sendMessage(
             chatId,
-            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country || country.name}\n📡 Operator: ${numData.operator || 'Unknown'}\n\nTap the number to copy`,
+            `📱 <b>NUMBER</b>\n\n<code>${escapeHTML(numData.full_number)}</code>\n\n🌍 Country: ${escapeHTML(numData.country || country.name)}\n📡 Operator: ${escapeHTML(numData.operator || 'Unknown')}\n\nTap the number to copy`,
             {
-                parse_mode: "Markdown",
+                parse_mode: "HTML",
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -394,7 +405,7 @@ function startOtpChecker(chatId, numberId) {
             
             await User.updateOne({ chatId }, { otpReceived: true });
 
-            // Clean layout (Stripping out any API spaces/formatting)
+            // Strip out non-digits from code to maintain solid format layout
             let rawOtp = match.code ? match.code.toString() : match.message;
             let otpCode = rawOtp.replace(/\D/g, ""); 
 
@@ -402,19 +413,33 @@ function startOtpChecker(chatId, numberId) {
                 otpCode = otpCode.slice(0, 6);
             }
 
-            // 1. Send cleanly to User Private Chat Box (Click to copy)
+            // Secure and escape dynamic variables before injecting into HTML strings
+            const safeMsg = escapeHTML(match.message);
+            const maskedNumberStr = escapeHTML(maskNumber(user.number));
+
+            // 1. Send to User Private Chat Box (HTML Code tag enables Tap to Copy)
             await bot.sendMessage(
                 chatId,
-                `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
-                { parse_mode: "Markdown" }
-            );
+                `✅ <b>OTP RECEIVED</b>\n\n🔐 OTP: <code>${otpCode}</code>\n\n📩 Message:\n<code>${safeMsg}</code>`,
+                { parse_mode: "HTML" }
+            ).catch((err) => console.log("Private payload crash prevented:", err.message));
 
-            // 2. 🔥 FORWARD TO TELEGRAM GROUP (Click to copy enabled here as well)
-            const maskedNumberStr = maskNumber(user.number);
-            const groupPayload = `New OTP Received 🔥\n\n📱 Number: ${maskedNumberStr}\n🔐 OTP: \`${otpCode}\`\n\n📩 Full Message:\n\`${match.message}\``;
+            // 2. 🔥 FORWARD TO TELEGRAM GROUP
+            // HTML <code> tag ensures Click-to-Copy works flawlessly here too
+            const groupPayload = `New OTP Received 🔥\n\n📱 <b>Number:</b> ${maskedNumberStr}\n🔐 <b>OTP:</b> <code>${otpCode}</code>\n\n📩 <b>Full Message:</b>\n<code>${safeMsg}</code>`;
 
-            await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "Markdown" })
-                .catch((err) => console.log("Group Forwarding failed:", err.message));
+            console.log(`[FORWARDING] Attempting transmission to Group ID: ${REQUIRED_GROUP_ID}`);
+
+            await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "HTML" })
+                .then(() => console.log("✅ [SUCCESS] Group forwarding complete!"))
+                .catch((err) => {
+                    console.error("❌ [FAILURE] Telegram Group forwarding failed rejection logs:");
+                    if (err.response && err.response.body) {
+                        console.error(JSON.stringify(err.response.body, null, 2));
+                    } else {
+                        console.error(err);
+                    }
+                });
 
             clearInterval(interval);
 
@@ -426,4 +451,3 @@ function startOtpChecker(chatId, numberId) {
 
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
-                                              
