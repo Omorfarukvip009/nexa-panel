@@ -46,7 +46,7 @@ app.get("/", (req, res) => {
             </head>
             <body>
                 <h1>✅ BOT RUNNING</h1>
-                <p>Telegram OTP Bot Active</p>
+                <p>Telegram OTP Bot (YesMS API) Active</p>
             </body>
         </html>
     `);
@@ -69,7 +69,7 @@ const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1";
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // =====================================
-// API CONFIG (YESMS.ONLINE)
+// YESMS.ONLINE API CONFIGURATION
 // =====================================
 const GET_NUMBER_API = "https://yesms.online/api/allocate_number";
 const OTP_API = "https://yesms.online/api/success_logs";
@@ -89,7 +89,7 @@ const YESMS_HEADERS = {
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Dest": "empty",
     "Accept-Language": "en,en-GB;q=0.9,en-KE;q=0.8,bn-BD;q=0.7,bn;q=0.6,en-US;q=0.5",
-    "Cookie": "session=5948588400:ba9e655756bd8e68baaccca203493fec"
+    "Cookie": process.env.YESMS_COOKIE // Pulled dynamically from environment variables
 };
 
 // =====================================
@@ -179,7 +179,7 @@ bot.on("callback_query", async (callbackQuery) => {
         return getNumber(chatId, country);
     }
 
-    // Handle Inline Change Country
+    // Handle Inline Change Country (Displays only the Country Name)
     if (data === "change_country") {
         const countries = await Country.find();
         if (!countries.length) {
@@ -192,7 +192,7 @@ bot.on("callback_query", async (callbackQuery) => {
             {
                 reply_markup: {
                     inline_keyboard: countries.map(c => [
-                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
+                        { text: c.name, callback_data: `select_country:${c.name}` }
                     ])
                 }
             }
@@ -257,7 +257,7 @@ bot.on("message", async (msg) => {
     if (adminState[chatId] && adminState[chatId].step === "country_name") {
         adminState[chatId].countryName = text;
         adminState[chatId].step = "country_range";
-        return bot.sendMessage(chatId, "Send range\n\nExample:\n236729XXX");
+        return bot.sendMessage(chatId, "Send range ID for yesms\n\nExample:\n236729XXX");
     }
 
     // COUNTRY RANGE
@@ -292,12 +292,12 @@ bot.on("message", async (msg) => {
         let result = "🌍 COUNTRY LIST\n\n";
         countries.forEach((c, i) => {
             result += `${i + 1}. ${c.name}\n`;
-            result += `Range: ${c.range}\n\n`;
+            result += `Range ID: ${c.range}\n\n`;
         });
         return bot.sendMessage(chatId, result);
     }
 
-    // GET NUMBER
+    // GET NUMBER (Displays only the Country Name)
     if (text === "🌍 Get Number") {
         const countries = await Country.find();
         if (!countries.length) {
@@ -310,7 +310,7 @@ bot.on("message", async (msg) => {
             {
                 reply_markup: {
                     inline_keyboard: countries.map(c => [
-                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
+                        { text: c.name, callback_data: `select_country:${c.name}` }
                     ])
                 }
             }
@@ -324,12 +324,11 @@ bot.on("message", async (msg) => {
 async function getNumber(chatId, country) {
     try {
         const oldUser = await User.findOne({ chatId });
-        // STOP OLD NUMBER
         if (oldUser) {
             await User.updateOne({ chatId }, { otpReceived: true });
         }
 
-        // API REQUEST
+        // API REQUEST TO YESMS.ONLINE
         const response = await axios.post(
             GET_NUMBER_API,
             { range_id: country.range },
@@ -338,26 +337,28 @@ async function getNumber(chatId, country) {
         const resData = response.data;
 
         if (!resData || resData.success !== true || !resData.data || !resData.data.full_number) {
-            return bot.sendMessage(chatId, "❌ Failed to get number");
+            return bot.sendMessage(chatId, "❌ Failed to allocate number from YesMS");
         }
 
         const numData = resData.data;
+
         // SAVE USER
         await User.findOneAndUpdate(
             { chatId },
             {
                 chatId,
                 number: numData.full_number,
-                number_id: numData.full_number,
+                number_id: numData.full_number, // Use full number as specific tracking lookup key
                 country: numData.country || country.name,
                 otpReceived: false
             },
             { upsert: true }
         );
-        // SEND NUMBER
+
+        // SEND NUMBER TO PRIVATE CHAT
         await bot.sendMessage(
             chatId,
-            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
+            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country || country.name}\n📡 Operator: ${numData.operator || 'Unknown'}\n\nTap the number to copy`,
             {
                 parse_mode: "Markdown",
                 reply_markup: {
@@ -370,27 +371,30 @@ async function getNumber(chatId, country) {
                 }
             }
         );
-        // START CHECKER
+
+        // START BACKING MONITOR LOOP
         startOtpChecker(chatId, numData.full_number);
     } catch (e) {
-        console.log(e.message);
-        bot.sendMessage(chatId, "❌ API Error");
+        console.log("Allocation Error:", e.message);
+        bot.sendMessage(chatId, "❌ YesMS API Communication Error");
     }
 }
 
 // =====================================
-// OTP CHECKER & CHANNELS FORWARDER
+// OTP CHECKER & FORWARDER ENGINE
 // =====================================
 function startOtpChecker(chatId, numberId) {
     const interval = setInterval(async () => {
         try {
             const user = await User.findOne({ chatId });
 
+            // Kill loop safely if context changed or validation received flag tripped
             if (!user || user.number_id !== numberId || user.otpReceived) {
                 clearInterval(interval);
                 return;
             }
 
+            // Pull logs matching active session
             const response = await axios.get(OTP_API, { headers: YESMS_HEADERS, timeout: 15000 });
             const resData = response.data;
 
@@ -405,35 +409,35 @@ function startOtpChecker(chatId, numberId) {
 
             if (!match) return;
             
+            // Instantly flip flag in DB to stop background checking and double forwarding
             await User.updateOne({ chatId }, { otpReceived: true });
 
             const otpCode = match.code || match.message.replace(/\D/g, "").slice(0, 6);
 
-            // 1. Send OTP to Private Chat User
+            // 1. Send cleanly to User Private Box
             await bot.sendMessage(
                 chatId,
                 `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
                 { parse_mode: "Markdown" }
             );
 
-            // 2. Forward Log directly to Requested Target Group
+            // 2. Format and pipe to the Global Required Telegram Group
             const maskedNumberStr = maskNumber(user.number);
             const groupPayload = `New OTP Received 🔥\nNumber: ${maskedNumberStr}\nOTP: ${otpCode}\nFull Massage\n${match.message}`;
 
             await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload)
-                .catch((err) => console.log("Group Forwarding failed:", err.message));
+                .catch((err) => console.log("Channel logging stream broken:", err.message));
 
             clearInterval(interval);
 
         } catch (e) {
-            console.log("OTP ERROR:", e.message);
+            console.log("Poller Loop Error Exception:", e.message);
         }
-    }, 4000);
+    }, 4000); // Polls safely every 4 seconds to protect API connection bounds
 }
 
 // =====================================
-// ERROR HANDLER
+// RUNTIME POLLING EXCEPTION GATES
 // =====================================
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
-        
