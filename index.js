@@ -12,7 +12,7 @@ const User = require("./models/User");
 connectDB();
 
 // =====================================
-// EXPRESS SERVER (Crucial for Render)
+// EXPRESS SERVER
 // =====================================
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,31 +21,45 @@ app.get("/", (req, res) => {
     res.send(`
         <html>
             <head>
-                <title>OTP Bot Status</title>
+                <title>OTP Bot</title>
                 <style>
-                    body{background:#0f172a;color:white;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;flex-direction:column;font-family:Arial;}
-                    h1{color:#22c55e;font-size:55px;margin-bottom:10px;}
-                    p{color:#cbd5e1;font-size:22px;}
+                    body{
+                        background:#0f172a;
+                        color:white;
+                        display:flex;
+                        justify-content:center;
+                        align-items:center;
+                        height:100vh;
+                        margin:0;
+                        flex-direction:column;
+                        font-family:Arial;
+                    }
+                    h1{
+                        color:#22c55e;
+                        font-size:55px;
+                    }
+                    p{
+                        color:#cbd5e1;
+                        font-size:22px;
+                    }
                 </style>
             </head>
             <body>
-                <h1>✅ BOT IS ALIVE</h1>
-                <p>Telegram OTP Bot (YesMS API) Active & Scaling</p>
+                <h1>✅ BOT RUNNING</h1>
+                <p>Telegram OTP Bot Active</p>
             </body>
         </html>
     `);
 });
 
 app.listen(PORT, () => {
-    console.log(`Web Server running flawlessly on port ${PORT}`);
+    console.log("Web Server Running");
 });
 
 // =====================================
-// CONFIGURATION (ADMIN & TARGET GROUP)
+// ADMIN IDS
 // =====================================
-const ADMIN_IDS = [5948588400]; 
-const REQUIRED_GROUP_ID = process.env.REQUIRED_GROUP_ID || -1003724610035; 
-const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1"; 
+const ADMIN_IDS = [5948588400];
 
 // =====================================
 // TELEGRAM BOT
@@ -53,28 +67,11 @@ const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1";
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // =====================================
-// YESMS.ONLINE API CONFIGURATION
+// API CONFIG
 // =====================================
-const GET_NUMBER_API = "https://yesms.online/api/allocate_number";
-const OTP_API = "https://yesms.online/api/success_logs";
-
-const YESMS_HEADERS = {
-    "Host": "yesms.online",
-    "Connection": "keep-alive",
-    "sec-ch-ua-platform": '"Android"',
-    "User-Agent": "Mozilla/5.0 (Linux; Android 16; V2419 Build/BP2A.250605.031.A3_NN) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.91 Mobile Safari/537.36",
-    "sec-ch-ua": '"Android WebView";v="149", "Chromium";v="149", "Not)A;Brand\";v=\"24\"',
-    "Content-Type": "application/json",
-    "sec-ch-ua-mobile": "?1",
-    "Accept": "*/*",
-    "Origin": "https://yesms.online",
-    "X-Requested-With": "mark.via.gp",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Dest": "empty",
-    "Accept-Language": "en,en-GB;q=0.9,en-KE;q=0.8,bn-BD;q=0.7,bn;q=0.6,en-US;q=0.5",
-    "Cookie": process.env.YESMS_COOKIE
-};
+const MAUTH_API = process.env.MAUTH_API;
+const HEADERS = { "mauthapi": MAUTH_API };
+const GET_NUMBER_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/getnum";
 
 // =====================================
 // TEMP ADMIN STATE
@@ -82,88 +79,94 @@ const YESMS_HEADERS = {
 const adminState = {};
 
 // =====================================
-// UTILITY FUNCTIONS
+// START COMMAND
 // =====================================
-async function checkMembership(chatId) {
-    if (ADMIN_IDS.includes(chatId)) return true; 
-    try {
-        const member = await bot.getChatMember(REQUIRED_GROUP_ID, chatId);
-        const activeStatuses = ["creator", "administrator", "member", "restricted"];
-        return activeStatuses.includes(member.status);
-    } catch (e) {
-        console.log("Membership check error:", e.message);
-        return false;
-    }
-}
-
-function sendJoinMessage(chatId) {
+bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
     bot.sendMessage(
         chatId,
-        "hi please join our OTP group to use this bot",
+        "🤖 OTP BOT READY",
         {
             reply_markup: {
-                inline_keyboard: [[{ text: "OTP Group", url: GROUP_LINK }]]
+                keyboard: [["🌍 Get Number"]],
+                resize_keyboard: true
             }
         }
     );
-}
-
-function maskNumber(numStr) {
-    const clean = numStr.startsWith('+') ? numStr.slice(1) : numStr;
-    if (clean.length <= 7) return numStr;
-    const first3 = clean.slice(0, 3);
-    const last4 = clean.slice(-4);
-    return `+${first3}***${last4}`;
-}
-
-function escapeHTML(text) {
-    if (!text) return "";
-    return text.toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
+});
 
 // =====================================
-// CALLBACK QUERY HANDLER
+// ADMIN PANEL
+// =====================================
+bot.onText(/\/admin/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!ADMIN_IDS.includes(chatId)) return;
+
+    bot.sendMessage(
+        chatId,
+        "⚙️ ADMIN PANEL",
+        {
+            reply_markup: {
+                keyboard: [
+                    ["➕ Add Country"],
+                    ["➖ Remove Country"],
+                    ["📋 Country List"]
+                ],
+                resize_keyboard: true
+            }
+        }
+    );
+});
+
+// =====================================
+// CALLBACK QUERY HANDLER (INLINE BUTTONS)
 // =====================================
 bot.on("callback_query", async (callbackQuery) => {
     const msg = callbackQuery.message;
     const chatId = msg.chat.id;
     const data = callbackQuery.data;
 
+    // Acknowledge the callback immediately to remove loading state
     bot.answerCallbackQuery(callbackQuery.id);
 
-    const isMember = await checkMembership(chatId);
-    if (!isMember) return sendJoinMessage(chatId);
-
+    // Handle Country Selection
     if (data.startsWith("select_country:")) {
         const countryName = data.split(":")[1];
         const selectedCountry = await Country.findOne({ name: countryName });
         
         if (selectedCountry) {
+            // Deletes the "Select Country" inline message to clean the inbox
             bot.deleteMessage(chatId, msg.message_id).catch((e) => 
                 console.log("Error deleting menu message:", e.message)
             );
+
             return getNumber(chatId, selectedCountry);
         } else {
             return bot.sendMessage(chatId, "❌ Country not found");
         }
     }
 
+    // Handle Inline Change Number
     if (data === "change_num") {
         const user = await User.findOne({ chatId });
-        if (!user) return bot.sendMessage(chatId, "❌ No active number");
+        if (!user) {
+            return bot.sendMessage(chatId, "❌ No active number");
+        }
 
         const country = await Country.findOne({ name: user.country });
-        if (!country) return bot.sendMessage(chatId, "❌ Country not found");
+        if (!country) {
+            return bot.sendMessage(chatId, "❌ Country not found");
+        }
 
         return getNumber(chatId, country);
     }
 
+    // Handle Inline Change Country
     if (data === "change_country") {
         const countries = await Country.find();
-        if (!countries.length) return bot.sendMessage(chatId, "❌ No country available");
+        if (!countries.length) {
+            return bot.sendMessage(chatId, "❌ No country available");
+        }
 
         return bot.sendMessage(
             chatId,
@@ -171,7 +174,7 @@ bot.on("callback_query", async (callbackQuery) => {
             {
                 reply_markup: {
                     inline_keyboard: countries.map(c => [
-                        { text: c.name, callback_data: `select_country:${c.name}` }
+                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
                     ])
                 }
             }
@@ -188,52 +191,20 @@ bot.on("message", async (msg) => {
 
     if (!text) return;
 
-    const isMember = await checkMembership(chatId);
-    if (!isMember) return sendJoinMessage(chatId);
-
-    if (text === "/start") {
-        return bot.sendMessage(
-            chatId,
-            "🤖 OTP BOT READY",
-            {
-                reply_markup: {
-                    keyboard: [["🌍 Get Number"]],
-                    resize_keyboard: true
-                }
-            }
-        );
-    }
-
-    if (text === "/admin") {
-        if (!ADMIN_IDS.includes(chatId)) return;
-
-        return bot.sendMessage(
-            chatId,
-            "⚙️ ADMIN PANEL",
-            {
-                reply_markup: {
-                    keyboard: [
-                        ["➕ Add Country"],
-                        ["➖ Remove Country"],
-                        ["📋 Country List"]
-                    ],
-                    resize_keyboard: true
-                }
-            }
-        );
-    }
-
+    // ADD COUNTRY
     if (text === "➕ Add Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "country_name" };
         return bot.sendMessage(chatId, "Send country name");
     }
 
+    // COUNTRY NAME
     if (adminState[chatId] && adminState[chatId].step === "country_name") {
         adminState[chatId].countryName = text;
         adminState[chatId].step = "country_range";
-        return bot.sendMessage(chatId, "Send range ID for yesms\n\nExample:\n236729XXX");
+        return bot.sendMessage(chatId, "Send range\n\nExample:\n228983");
     }
 
+    // COUNTRY RANGE
     if (adminState[chatId] && adminState[chatId].step === "country_range") {
         await Country.create({
             name: adminState[chatId].countryName,
@@ -243,6 +214,7 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, "✅ Country Added");
     }
 
+    // REMOVE COUNTRY
     if (text === "➖ Remove Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "remove_country" };
         return bot.sendMessage(chatId, "Send exact country name");
@@ -254,21 +226,27 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, "✅ Country Removed");
     }
 
+    // COUNTRY LIST
     if (text === "📋 Country List" && ADMIN_IDS.includes(chatId)) {
         const countries = await Country.find();
-        if (!countries.length) return bot.sendMessage(chatId, "No countries");
+        if (!countries.length) {
+            return bot.sendMessage(chatId, "No countries");
+        }
 
         let result = "🌍 COUNTRY LIST\n\n";
         countries.forEach((c, i) => {
             result += `${i + 1}. ${c.name}\n`;
-            result += `Range ID: ${c.range}\n\n`;
+            result += `Range: ${c.range}\n\n`;
         });
         return bot.sendMessage(chatId, result);
     }
 
+    // GET NUMBER
     if (text === "🌍 Get Number") {
         const countries = await Country.find();
-        if (!countries.length) return bot.sendMessage(chatId, "❌ No country available");
+        if (!countries.length) {
+            return bot.sendMessage(chatId, "❌ No country available");
+        }
 
         return bot.sendMessage(
             chatId,
@@ -276,7 +254,7 @@ bot.on("message", async (msg) => {
             {
                 reply_markup: {
                     inline_keyboard: countries.map(c => [
-                        { text: c.name, callback_data: `select_country:${c.name}` }
+                        { text: `${c.name} - ( ${c.range} )`, callback_data: `select_country:${c.name}` }
                     ])
                 }
             }
@@ -289,37 +267,53 @@ bot.on("message", async (msg) => {
 // =====================================
 async function getNumber(chatId, country) {
     try {
+        const oldUser = await User.findOne({ chatId });
+
+        // STOP OLD NUMBER
+        if (oldUser) {
+            await User.updateOne({ chatId }, { otpReceived: true });
+        }
+
+        // API REQUEST
         const response = await axios.post(
             GET_NUMBER_API,
-            { range_id: country.range },
-            { headers: YESMS_HEADERS, timeout: 15000 }
+            { rid: country.range },
+            { headers: HEADERS, timeout: 15000 }
         );
+
         const resData = response.data;
 
-        if (!resData || resData.success !== true || !resData.data || !resData.data.full_number) {
-            return bot.sendMessage(chatId, "❌ Failed to allocate number from YesMS");
+        if (
+            !resData ||
+            !resData.meta ||
+            resData.meta.code !== 200 ||
+            !resData.data ||
+            !resData.data.full_number
+        ) {
+            return bot.sendMessage(chatId, "❌ Failed to get number");
         }
 
         const numData = resData.data;
 
-        // Changing/Upserting clears user state and queues them for the Centralized Background Engine
+        // SAVE USER
         await User.findOneAndUpdate(
             { chatId },
             {
                 chatId,
                 number: numData.full_number,
-                number_id: numData.full_number, 
+                number_id: resData.rid || numData.no_plus_number,
                 country: numData.country || country.name,
-                otpReceived: false 
+                otpReceived: false
             },
             { upsert: true }
         );
 
+        // SEND NUMBER
         await bot.sendMessage(
             chatId,
-            `📱 <b>NUMBER</b>\n\n<code>${escapeHTML(numData.full_number)}</code>\n\n🌍 Country: ${escapeHTML(numData.country || country.name)}\n📡 Operator: ${escapeHTML(numData.operator || 'Unknown')}\n\nTap the number to copy`,
+            `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country}\n📡 Operator: ${numData.operator}\n\nTap the number to copy`,
             {
-                parse_mode: "HTML",
+                parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -331,84 +325,74 @@ async function getNumber(chatId, country) {
             }
         );
 
+        // START CHECKER
+        startOtpChecker(chatId, resData.rid || numData.no_plus_number);
+
     } catch (e) {
-        console.log("Allocation Error:", e.message);
-        bot.sendMessage(chatId, "❌ YesMS API Communication Error");
+        console.log(e.message);
+        bot.sendMessage(chatId, "❌ API Error");
     }
 }
 
 // =====================================
-// CENTRALIZED GLOBAL OTP POLLING ENGINE
+// OTP CHECKER
 // =====================================
-async function startGlobalOtpPoller() {
-    try {
-        // 1. Fetch all users across the system who are waiting for an OTP entry
-        const activeUsers = await User.find({ otpReceived: false, number: { $exists: true } });
+const OTP_API = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api/success-otp";
 
-        if (activeUsers.length === 0) {
-            // No active users? Skip API calls entirely to keep execution lightweight
-            return;
-        }
+function startOtpChecker(chatId, numberId) {
+    const interval = setInterval(async () => {
+        try {
+            const user = await User.findOne({ chatId });
 
-        // 2. Perform ONE single unified call to the log api for everyone combined
-        const response = await axios.get(OTP_API, { headers: YESMS_HEADERS, timeout: 12000 });
-        const resData = response.data;
-
-        if (resData && Array.isArray(resData.logs) && resData.logs.length > 0) {
-            
-            // Loop through each user currently waiting in our MongoDB database query
-            for (const user of activeUsers) {
-                const userNumberClean = user.number.replace(/\D/g, "");
-
-                // Safely search logs for an identical matched parsed phone sequence
-                const match = resData.logs.find(
-                    (entry) => entry.number.replace(/\D/g, "") === userNumberClean
-                );
-
-                if (match) {
-                    // CONCURRENCY LOCK: Stop identical loops from running double updates
-                    const updateResult = await User.updateOne(
-                        { _id: user._id, otpReceived: false }, 
-                        { $set: { otpReceived: true } }
-                    );
-
-                    // If it was already marked true by another run context, skip sending twice
-                    if (updateResult.modifiedCount === 0) continue;
-
-                    let rawOtp = match.code ? match.code.toString() : match.message;
-                    let otpCode = rawOtp.replace(/\D/g, ""); 
-                    if (otpCode.length > 6) otpCode = otpCode.slice(0, 6);
-
-                    const safeMsg = escapeHTML(match.message);
-                    const maskedNumberStr = escapeHTML(maskNumber(user.number));
-
-                    // Deliver Alert 1: Private Message to User Box
-                    await bot.sendMessage(
-                        user.chatId,
-                        `✅ <b>OTP RECEIVED</b>\n\n🔐 OTP: <code>${otpCode}</code>\n\n📩 Message:\n<code>${safeMsg}</code>`,
-                        { parse_mode: "HTML" }
-                    ).catch((err) => console.log(`User transmission aborted [${user.chatId}]:`, err.message));
-
-                    // Deliver Alert 2: Broadcast to Shared Telegram Monitoring Group
-                    const groupPayload = `New OTP Received 🔥\n\n📱 <b>Number:</b> ${maskedNumberStr}\n🔐 <b>OTP:</b> <code>${otpCode}</code>\n\n📩 <b>Full Message:</b>\n<code>${safeMsg}</code>`;
-                    
-                    await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "HTML" })
-                        .then(() => console.log(`✅ Success forwarding log array payload to channel for ID: ${user.chatId}`))
-                        .catch((err) => console.error("Group routing error registry rejection:", err.message));
-                }
+            if (!user || user.number_id !== numberId || user.otpReceived) {
+                clearInterval(interval);
+                return;
             }
+
+            const response = await axios.get(OTP_API, { headers: HEADERS, timeout: 15000 });
+            const resData = response.data;
+
+            if (
+                !resData ||
+                !resData.meta ||
+                resData.meta.code !== 200 ||
+                !resData.data ||
+                !Array.isArray(resData.data.otps) ||
+                resData.data.otps.length === 0
+            ) {
+                return;
+            }
+
+            const userNumber = user.number.replace(/[^0-9]/g, "");
+            const match = resData.data.otps.find(
+                (entry) => entry.number.replace(/[^0-9]/g, "") === userNumber
+            );
+
+            if (!match) return;
+
+            await User.updateOne({ chatId }, { otpReceived: true });
+
+            const cleaned = match.message.replace(/\D/g, "");
+            const otpCode = cleaned.slice(0, 6);
+
+            await bot.sendMessage(
+                chatId,
+                `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
+                { parse_mode: "Markdown" }
+            );
+
+            clearInterval(interval);
+
+        } catch (e) {
+            console.log("OTP ERROR:", e.message);
         }
-    } catch (e) {
-        console.log("Global Poller processing execution failure:", e.message);
-    } finally {
-        // Enforce loop re-queueing to prevent loop death under network timeouts
-        setTimeout(startGlobalOtpPoller, 4000);
-    }
+    }, 2000);
 }
 
-// Kickstart global tracking background system engine
-startGlobalOtpPoller();
-
+// =====================================
+// ERROR HANDLER
+// =====================================
 bot.on("polling_error", console.log);
-console.log("BOT RUNNING ON PRODUCTION TOPOLOGY...");
-        
+console.log("BOT RUNNING...");
+
+                
