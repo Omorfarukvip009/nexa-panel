@@ -89,7 +89,7 @@ const YESMS_HEADERS = {
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Dest": "empty",
     "Accept-Language": "en,en-GB;q=0.9,en-KE;q=0.8,bn-BD;q=0.7,bn;q=0.6,en-US;q=0.5",
-    "Cookie": process.env.YESMS_COOKIE // Pulled dynamically from environment variables
+    "Cookie": process.env.YESMS_COOKIE
 };
 
 // =====================================
@@ -144,11 +144,9 @@ bot.on("callback_query", async (callbackQuery) => {
 
     bot.answerCallbackQuery(callbackQuery.id);
 
-    // Verify Membership
     const isMember = await checkMembership(chatId);
     if (!isMember) return sendJoinMessage(chatId);
 
-    // Handle Country Selection
     if (data.startsWith("select_country:")) {
         const countryName = data.split(":")[1];
         const selectedCountry = await Country.findOne({ name: countryName });
@@ -164,7 +162,6 @@ bot.on("callback_query", async (callbackQuery) => {
         }
     }
 
-    // Handle Inline Change Number
     if (data === "change_num") {
         const user = await User.findOne({ chatId });
         if (!user) {
@@ -179,7 +176,6 @@ bot.on("callback_query", async (callbackQuery) => {
         return getNumber(chatId, country);
     }
 
-    // Handle Inline Change Country (Displays only the Country Name)
     if (data === "change_country") {
         const countries = await Country.find();
         if (!countries.length) {
@@ -209,11 +205,9 @@ bot.on("message", async (msg) => {
 
     if (!text) return;
 
-    // Verify Membership
     const isMember = await checkMembership(chatId);
     if (!isMember) return sendJoinMessage(chatId);
 
-    // START COMMAND
     if (text === "/start") {
         return bot.sendMessage(
             chatId,
@@ -227,7 +221,6 @@ bot.on("message", async (msg) => {
         );
     }
 
-    // ADMIN PANEL
     if (text === "/admin") {
         if (!ADMIN_IDS.includes(chatId)) return;
 
@@ -247,20 +240,17 @@ bot.on("message", async (msg) => {
         );
     }
 
-    // ADD COUNTRY
     if (text === "➕ Add Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "country_name" };
         return bot.sendMessage(chatId, "Send country name");
     }
 
-    // COUNTRY NAME
     if (adminState[chatId] && adminState[chatId].step === "country_name") {
         adminState[chatId].countryName = text;
         adminState[chatId].step = "country_range";
         return bot.sendMessage(chatId, "Send range ID for yesms\n\nExample:\n236729XXX");
     }
 
-    // COUNTRY RANGE
     if (adminState[chatId] && adminState[chatId].step === "country_range") {
         await Country.create({
             name: adminState[chatId].countryName,
@@ -270,7 +260,6 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, "✅ Country Added");
     }
 
-    // REMOVE COUNTRY
     if (text === "➖ Remove Country" && ADMIN_IDS.includes(chatId)) {
         adminState[chatId] = { step: "remove_country" };
         return bot.sendMessage(chatId, "Send exact country name");
@@ -282,7 +271,6 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, "✅ Country Removed");
     }
 
-    // COUNTRY LIST
     if (text === "📋 Country List" && ADMIN_IDS.includes(chatId)) {
         const countries = await Country.find();
         if (!countries.length) {
@@ -297,7 +285,6 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, result);
     }
 
-    // GET NUMBER (Displays only the Country Name)
     if (text === "🌍 Get Number") {
         const countries = await Country.find();
         if (!countries.length) {
@@ -328,7 +315,6 @@ async function getNumber(chatId, country) {
             await User.updateOne({ chatId }, { otpReceived: true });
         }
 
-        // API REQUEST TO YESMS.ONLINE
         const response = await axios.post(
             GET_NUMBER_API,
             { range_id: country.range },
@@ -342,20 +328,18 @@ async function getNumber(chatId, country) {
 
         const numData = resData.data;
 
-        // SAVE USER
         await User.findOneAndUpdate(
             { chatId },
             {
                 chatId,
                 number: numData.full_number,
-                number_id: numData.full_number, // Use full number as specific tracking lookup key
+                number_id: numData.full_number, 
                 country: numData.country || country.name,
                 otpReceived: false
             },
             { upsert: true }
         );
 
-        // SEND NUMBER TO PRIVATE CHAT
         await bot.sendMessage(
             chatId,
             `📱 NUMBER\n\n\`${numData.full_number}\`\n\n🌍 Country: ${numData.country || country.name}\n📡 Operator: ${numData.operator || 'Unknown'}\n\nTap the number to copy`,
@@ -372,7 +356,6 @@ async function getNumber(chatId, country) {
             }
         );
 
-        // START BACKING MONITOR LOOP
         startOtpChecker(chatId, numData.full_number);
     } catch (e) {
         console.log("Allocation Error:", e.message);
@@ -388,13 +371,11 @@ function startOtpChecker(chatId, numberId) {
         try {
             const user = await User.findOne({ chatId });
 
-            // Kill loop safely if context changed or validation received flag tripped
             if (!user || user.number_id !== numberId || user.otpReceived) {
                 clearInterval(interval);
                 return;
             }
 
-            // Pull logs matching active session
             const response = await axios.get(OTP_API, { headers: YESMS_HEADERS, timeout: 15000 });
             const resData = response.data;
 
@@ -409,23 +390,29 @@ function startOtpChecker(chatId, numberId) {
 
             if (!match) return;
             
-            // Instantly flip flag in DB to stop background checking and double forwarding
             await User.updateOne({ chatId }, { otpReceived: true });
 
-            const otpCode = match.code || match.message.replace(/\D/g, "").slice(0, 6);
+            // 🔥 FIX: Clean out ALL spaces/non-digits from code or message to force solid layout
+            let rawOtp = match.code ? match.code.toString() : match.message;
+            let otpCode = rawOtp.replace(/\D/g, ""); // Removes spaces, hyphens, and letters completely
 
-            // 1. Send cleanly to User Private Box
+            // Optional: If the scraped code is longer than 6 digits (like combining message digits), keep just first 6
+            if (otpCode.length > 6) {
+                otpCode = otpCode.slice(0, 6);
+            }
+
+            // 1. Send cleanly to User Private Box (Click to copy)
             await bot.sendMessage(
                 chatId,
                 `✅ OTP RECEIVED\n\n🔐 OTP: \`${otpCode}\`\n\n📩 Message:\n\`${match.message}\``,
                 { parse_mode: "Markdown" }
             );
 
-            // 2. Format and pipe to the Global Required Telegram Group
+            // 2. Format and pipe to Global Telegram Group (Click to copy enabled here too)
             const maskedNumberStr = maskNumber(user.number);
-            const groupPayload = `New OTP Received 🔥\nNumber: ${maskedNumberStr}\nOTP: ${otpCode}\nFull Massage\n${match.message}`;
+            const groupPayload = `New OTP Received 🔥\nNumber: ${maskedNumberStr}\nOTP: \`${otpCode}\`\nFull Message:\n${match.message}`;
 
-            await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload)
+            await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "Markdown" })
                 .catch((err) => console.log("Channel logging stream broken:", err.message));
 
             clearInterval(interval);
@@ -433,11 +420,9 @@ function startOtpChecker(chatId, numberId) {
         } catch (e) {
             console.log("Poller Loop Error Exception:", e.message);
         }
-    }, 4000); // Polls safely every 4 seconds to protect API connection bounds
+    }, 4000);
 }
 
-// =====================================
-// RUNTIME POLLING EXCEPTION GATES
-// =====================================
 bot.on("polling_error", console.log);
 console.log("BOT RUNNING...");
+    
