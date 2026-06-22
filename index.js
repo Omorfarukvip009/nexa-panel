@@ -12,7 +12,7 @@ const User = require("./models/User");
 connectDB();
 
 // =====================================
-// EXPRESS SERVER
+// EXPRESS SERVER (Crucial for Render)
 // =====================================
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,47 +21,29 @@ app.get("/", (req, res) => {
     res.send(`
         <html>
             <head>
-                <title>OTP Bot</title>
+                <title>OTP Bot Status</title>
                 <style>
-                    body{
-                        background:#0f172a;
-                        color:white;
-                        display:flex;
-                        justify-content:center;
-                        align-items:center;
-                        height:100vh;
-                        margin:0;
-                        flex-direction:column;
-                        font-family:Arial;
-                    }
-                    h1{
-                        color:#22c55e;
-                        font-size:55px;
-                    }
-                    p{
-                        color:#cbd5e1;
-                        font-size:22px;
-                    }
+                    body{background:#0f172a;color:white;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;flex-direction:column;font-family:Arial;}
+                    h1{color:#22c55e;font-size:55px;margin-bottom:10px;}
+                    p{color:#cbd5e1;font-size:22px;}
                 </style>
             </head>
             <body>
-                <h1>✅ BOT RUNNING</h1>
-                <p>Telegram OTP Bot (YesMS API) Active</p>
+                <h1>✅ BOT IS ALIVE</h1>
+                <p>Telegram OTP Bot (YesMS API) Active & Scaling</p>
             </body>
         </html>
     `);
 });
 
 app.listen(PORT, () => {
-    console.log("Web Server Running");
+    console.log(`Web Server running flawlessly on port ${PORT}`);
 });
 
 // =====================================
 // CONFIGURATION (ADMIN & TARGET GROUP)
 // =====================================
 const ADMIN_IDS = [5948588400]; 
-
-// ⚙️ CHOOSE YOUR TARGET GROUP/CHANNEL CONFIGURATION:
 const REQUIRED_GROUP_ID = process.env.REQUIRED_GROUP_ID || -1003724610035; 
 const GROUP_LINK = "https://t.me/+ROInVYWEN-czMjI1"; 
 
@@ -120,9 +102,7 @@ function sendJoinMessage(chatId) {
         "hi please join our OTP group to use this bot",
         {
             reply_markup: {
-                inline_keyboard: [
-                    [{ text: "OTP Group", url: GROUP_LINK }]
-                ]
+                inline_keyboard: [[{ text: "OTP Group", url: GROUP_LINK }]]
             }
         }
     );
@@ -136,8 +116,6 @@ function maskNumber(numStr) {
     return `+${first3}***${last4}`;
 }
 
-// Helper to prevent HTML syntax injection from broken SMS strings
-// This stops Telegram from throwing parsing errors
 function escapeHTML(text) {
     if (!text) return "";
     return text.toString()
@@ -147,7 +125,7 @@ function escapeHTML(text) {
 }
 
 // =====================================
-// CALLBACK QUERY HANDLER (INLINE BUTTONS)
+// CALLBACK QUERY HANDLER
 // =====================================
 bot.on("callback_query", async (callbackQuery) => {
     const msg = callbackQuery.message;
@@ -167,7 +145,6 @@ bot.on("callback_query", async (callbackQuery) => {
             bot.deleteMessage(chatId, msg.message_id).catch((e) => 
                 console.log("Error deleting menu message:", e.message)
             );
-
             return getNumber(chatId, selectedCountry);
         } else {
             return bot.sendMessage(chatId, "❌ Country not found");
@@ -176,23 +153,17 @@ bot.on("callback_query", async (callbackQuery) => {
 
     if (data === "change_num") {
         const user = await User.findOne({ chatId });
-        if (!user) {
-            return bot.sendMessage(chatId, "❌ No active number");
-        }
+        if (!user) return bot.sendMessage(chatId, "❌ No active number");
 
         const country = await Country.findOne({ name: user.country });
-        if (!country) {
-            return bot.sendMessage(chatId, "❌ Country not found");
-        }
+        if (!country) return bot.sendMessage(chatId, "❌ Country not found");
 
         return getNumber(chatId, country);
     }
 
     if (data === "change_country") {
         const countries = await Country.find();
-        if (!countries.length) {
-            return bot.sendMessage(chatId, "❌ No country available");
-        }
+        if (!countries.length) return bot.sendMessage(chatId, "❌ No country available");
 
         return bot.sendMessage(
             chatId,
@@ -285,9 +256,7 @@ bot.on("message", async (msg) => {
 
     if (text === "📋 Country List" && ADMIN_IDS.includes(chatId)) {
         const countries = await Country.find();
-        if (!countries.length) {
-            return bot.sendMessage(chatId, "No countries");
-        }
+        if (!countries.length) return bot.sendMessage(chatId, "No countries");
 
         let result = "🌍 COUNTRY LIST\n\n";
         countries.forEach((c, i) => {
@@ -299,9 +268,7 @@ bot.on("message", async (msg) => {
 
     if (text === "🌍 Get Number") {
         const countries = await Country.find();
-        if (!countries.length) {
-            return bot.sendMessage(chatId, "❌ No country available");
-        }
+        if (!countries.length) return bot.sendMessage(chatId, "❌ No country available");
 
         return bot.sendMessage(
             chatId,
@@ -322,11 +289,6 @@ bot.on("message", async (msg) => {
 // =====================================
 async function getNumber(chatId, country) {
     try {
-        const oldUser = await User.findOne({ chatId });
-        if (oldUser) {
-            await User.updateOne({ chatId }, { otpReceived: true });
-        }
-
         const response = await axios.post(
             GET_NUMBER_API,
             { range_id: country.range },
@@ -340,6 +302,7 @@ async function getNumber(chatId, country) {
 
         const numData = resData.data;
 
+        // Changing/Upserting clears user state and queues them for the Centralized Background Engine
         await User.findOneAndUpdate(
             { chatId },
             {
@@ -347,12 +310,11 @@ async function getNumber(chatId, country) {
                 number: numData.full_number,
                 number_id: numData.full_number, 
                 country: numData.country || country.name,
-                otpReceived: false
+                otpReceived: false 
             },
             { upsert: true }
         );
 
-        // Updated to HTML mode for absolute layout safety
         await bot.sendMessage(
             chatId,
             `📱 <b>NUMBER</b>\n\n<code>${escapeHTML(numData.full_number)}</code>\n\n🌍 Country: ${escapeHTML(numData.country || country.name)}\n📡 Operator: ${escapeHTML(numData.operator || 'Unknown')}\n\nTap the number to copy`,
@@ -369,7 +331,6 @@ async function getNumber(chatId, country) {
             }
         );
 
-        startOtpChecker(chatId, numData.full_number);
     } catch (e) {
         console.log("Allocation Error:", e.message);
         bot.sendMessage(chatId, "❌ YesMS API Communication Error");
@@ -377,77 +338,77 @@ async function getNumber(chatId, country) {
 }
 
 // =====================================
-// OTP CHECKER & GROUP FORWARDER ENGINE
+// CENTRALIZED GLOBAL OTP POLLING ENGINE
 // =====================================
-function startOtpChecker(chatId, numberId) {
-    const interval = setInterval(async () => {
-        try {
-            const user = await User.findOne({ chatId });
+async function startGlobalOtpPoller() {
+    try {
+        // 1. Fetch all users across the system who are waiting for an OTP entry
+        const activeUsers = await User.find({ otpReceived: false, number: { $exists: true } });
 
-            if (!user || user.number_id !== numberId || user.otpReceived) {
-                clearInterval(interval);
-                return;
-            }
-
-            const response = await axios.get(OTP_API, { headers: YESMS_HEADERS, timeout: 15000 });
-            const resData = response.data;
-
-            if (!resData || !Array.isArray(resData.logs) || resData.logs.length === 0) {
-                return;
-            }
-
-            const userNumber = user.number.replace(/[^0-9]/g, "");
-            const match = resData.logs.find(
-                (entry) => entry.number.replace(/[^0-9]/g, "") === userNumber
-            );
-
-            if (!match) return;
-            
-            await User.updateOne({ chatId }, { otpReceived: true });
-
-            // Strip out non-digits from code to maintain solid format layout
-            let rawOtp = match.code ? match.code.toString() : match.message;
-            let otpCode = rawOtp.replace(/\D/g, ""); 
-
-            if (otpCode.length > 6) {
-                otpCode = otpCode.slice(0, 6);
-            }
-
-            // Secure and escape dynamic variables before injecting into HTML strings
-            const safeMsg = escapeHTML(match.message);
-            const maskedNumberStr = escapeHTML(maskNumber(user.number));
-
-            // 1. Send to User Private Chat Box (HTML Code tag enables Tap to Copy)
-            await bot.sendMessage(
-                chatId,
-                `✅ <b>OTP RECEIVED</b>\n\n🔐 OTP: <code>${otpCode}</code>\n\n📩 Message:\n<code>${safeMsg}</code>`,
-                { parse_mode: "HTML" }
-            ).catch((err) => console.log("Private payload crash prevented:", err.message));
-
-            // 2. 🔥 FORWARD TO TELEGRAM GROUP
-            // HTML <code> tag ensures Click-to-Copy works flawlessly here too
-            const groupPayload = `New OTP Received 🔥\n\n📱 <b>Number:</b> ${maskedNumberStr}\n🔐 <b>OTP:</b> <code>${otpCode}</code>\n\n📩 <b>Full Message:</b>\n<code>${safeMsg}</code>`;
-
-            console.log(`[FORWARDING] Attempting transmission to Group ID: ${REQUIRED_GROUP_ID}`);
-
-            await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "HTML" })
-                .then(() => console.log("✅ [SUCCESS] Group forwarding complete!"))
-                .catch((err) => {
-                    console.error("❌ [FAILURE] Telegram Group forwarding failed rejection logs:");
-                    if (err.response && err.response.body) {
-                        console.error(JSON.stringify(err.response.body, null, 2));
-                    } else {
-                        console.error(err);
-                    }
-                });
-
-            clearInterval(interval);
-
-        } catch (e) {
-            console.log("Poller Loop Error Exception:", e.message);
+        if (activeUsers.length === 0) {
+            // No active users? Skip API calls entirely to keep execution lightweight
+            return;
         }
-    }, 4000);
+
+        // 2. Perform ONE single unified call to the log api for everyone combined
+        const response = await axios.get(OTP_API, { headers: YESMS_HEADERS, timeout: 12000 });
+        const resData = response.data;
+
+        if (resData && Array.isArray(resData.logs) && resData.logs.length > 0) {
+            
+            // Loop through each user currently waiting in our MongoDB database query
+            for (const user of activeUsers) {
+                const userNumberClean = user.number.replace(/\D/g, "");
+
+                // Safely search logs for an identical matched parsed phone sequence
+                const match = resData.logs.find(
+                    (entry) => entry.number.replace(/\D/g, "") === userNumberClean
+                );
+
+                if (match) {
+                    // CONCURRENCY LOCK: Stop identical loops from running double updates
+                    const updateResult = await User.updateOne(
+                        { _id: user._id, otpReceived: false }, 
+                        { $set: { otpReceived: true } }
+                    );
+
+                    // If it was already marked true by another run context, skip sending twice
+                    if (updateResult.modifiedCount === 0) continue;
+
+                    let rawOtp = match.code ? match.code.toString() : match.message;
+                    let otpCode = rawOtp.replace(/\D/g, ""); 
+                    if (otpCode.length > 6) otpCode = otpCode.slice(0, 6);
+
+                    const safeMsg = escapeHTML(match.message);
+                    const maskedNumberStr = escapeHTML(maskNumber(user.number));
+
+                    // Deliver Alert 1: Private Message to User Box
+                    await bot.sendMessage(
+                        user.chatId,
+                        `✅ <b>OTP RECEIVED</b>\n\n🔐 OTP: <code>${otpCode}</code>\n\n📩 Message:\n<code>${safeMsg}</code>`,
+                        { parse_mode: "HTML" }
+                    ).catch((err) => console.log(`User transmission aborted [${user.chatId}]:`, err.message));
+
+                    // Deliver Alert 2: Broadcast to Shared Telegram Monitoring Group
+                    const groupPayload = `New OTP Received 🔥\n\n📱 <b>Number:</b> ${maskedNumberStr}\n🔐 <b>OTP:</b> <code>${otpCode}</code>\n\n📩 <b>Full Message:</b>\n<code>${safeMsg}</code>`;
+                    
+                    await bot.sendMessage(REQUIRED_GROUP_ID, groupPayload, { parse_mode: "HTML" })
+                        .then(() => console.log(`✅ Success forwarding log array payload to channel for ID: ${user.chatId}`))
+                        .catch((err) => console.error("Group routing error registry rejection:", err.message));
+                }
+            }
+        }
+    } catch (e) {
+        console.log("Global Poller processing execution failure:", e.message);
+    } finally {
+        // Enforce loop re-queueing to prevent loop death under network timeouts
+        setTimeout(startGlobalOtpPoller, 4000);
+    }
 }
 
+// Kickstart global tracking background system engine
+startGlobalOtpPoller();
+
 bot.on("polling_error", console.log);
-console.log("BOT RUNNING...");
+console.log("BOT RUNNING ON PRODUCTION TOPOLOGY...");
+        
